@@ -700,7 +700,7 @@ docker compose up -d
 ## Screenshots
 
 ### Dashboard
-![Dashboard](docs/images/dashboard.png)
+![Dashboard]<img width="3837" height="2297" alt="image" src="https://github.com/user-attachments/assets/c628b2e5-8bef-45c4-b979-79755d1e7e3c" />
 
 ### Log Upload
 ![Log Upload](docs/images/log-upload.png)
