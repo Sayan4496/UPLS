@@ -1,0 +1,2 @@
+Sep 04 11:30:00 firewall01 sshd[1234]: Failed password for admin from 192.168.1.60 port 22
+Sep 04 11:35:00 firewall01 sshd[1235]: Accepted password for user from 192.168.1.70 port 22

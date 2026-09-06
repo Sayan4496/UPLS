@@ -1,0 +1,3 @@
+CEF:0|SecurityVendor|Firewall|1.0|100|Connection Blocked|8|src=192.168.1.10 dst=10.0.0.5 spt=443 dpt=8080 act=BLOCKED msg="Suspicious connection blocked"
+
+CEF:0|SecurityVendor|Firewall|1.0|101|Connection Allowed|3|src=192.168.1.20 dst=10.0.0.10 spt=80 dpt=443 act=ALLOWED msg="Normal connection allowed"

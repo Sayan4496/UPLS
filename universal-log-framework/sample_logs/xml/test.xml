@@ -1,0 +1,29 @@
+<events>
+
+    <event>
+        <timestamp>2026-09-04T12:00:00Z</timestamp>
+        <source_ip>192.168.1.100</source_ip>
+        <destination_ip>10.0.0.50</destination_ip>
+        <source_port>443</source_port>
+        <destination_port>8080</destination_port>
+        <severity>HIGH</severity>
+        <event_type>FIREWALL</event_type>
+        <action>BLOCKED</action>
+        <device_type>FIREWALL</device_type>
+        <vendor>TEST_VENDOR</vendor>
+        <message>Suspicious XML connection blocked</message>
+    </event>
+
+    <event>
+        <timestamp>2026-09-04T12:05:00Z</timestamp>
+        <source_ip>192.168.1.101</source_ip>
+        <destination_ip>10.0.0.51</destination_ip>
+        <severity>MEDIUM</severity>
+        <event_type>NETWORK</event_type>
+        <action>ALLOWED</action>
+        <device_type>ROUTER</device_type>
+        <vendor>TEST_VENDOR</vendor>
+        <message>Normal XML traffic</message>
+    </event>
+
+</events>

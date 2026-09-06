@@ -1,0 +1,1 @@
+timestamp=2026-09-04T11:00:00Z source_ip=192.168.1.50 destination_ip=10.0.0.30 source_port=22 destination_port=3389 severity=HIGH event_type=LOGIN action=DENIED device_type=FIREWALL vendor=TEST_VENDOR message="Unauthorized access attempt"

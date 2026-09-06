@@ -1,0 +1,3 @@
+LEEF:2.0|IBM|SecuritySystem|1.0|1001|src=192.168.1.10	dst=10.0.0.5	srcPort=443	dstPort=8080	severity=HIGH	action=BLOCKED	message=Suspicious connection
+
+LEEF:2.0|IBM|SecuritySystem|1.0|1002|src=192.168.1.20	dst=10.0.0.10	srcPort=80	dstPort=443	severity=MEDIUM	action=ALLOWED	message=Normal traffic
