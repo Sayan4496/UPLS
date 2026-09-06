@@ -38,7 +38,7 @@ The Universal Log Pre-processing Framework provides a centralized platform for i
 
 ```bash
 git clone https://github.com/Sayan4496/UPLS.git
-cd UPLS
+cd UPLS/universal-log-framework
 docker compose up -d --build
 ```
 
