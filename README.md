@@ -700,19 +700,27 @@ docker compose up -d
 ## Screenshots
 
 ### Dashboard
-![Dashboard]<img width="3837" height="2297" alt="image" src="https://github.com/user-attachments/assets/c628b2e5-8bef-45c4-b979-79755d1e7e3c" />
+<img width="3837" height="2297" alt="image" src="https://github.com/user-attachments/assets/c628b2e5-8bef-45c4-b979-79755d1e7e3c" />
+
+## In Dark Mode
+<img width="3837" height="2295" alt="image" src="https://github.com/user-attachments/assets/e85e9cce-6083-4c5e-a078-12c175d7226c" />
+
 
 ### Log Upload
-![Log Upload](docs/images/log-upload.png)
+<img width="3837" height="2300" alt="image" src="https://github.com/user-attachments/assets/ec3b775a-d3b4-439b-9abd-3ebdc9c58f49" />
+
 
 ### Events
-![Events](docs/images/events.png)
+<img width="3837" height="2300" alt="image" src="https://github.com/user-attachments/assets/869f3d75-2cd6-4bc8-86f5-d930494f2d8d" />
+
 
 ### Analytics
-![Analytics](docs/images/analytics.png)
+<img width="3837" height="2297" alt="image" src="https://github.com/user-attachments/assets/d44f0957-7d76-4511-a295-44c57fe3b657" />
+
 
 ### Reports
-![Reports](docs/images/reports.png)
+<img width="3837" height="2300" alt="image" src="https://github.com/user-attachments/assets/4eab61d5-b9c9-4d2c-a550-240e61cd965c" />
+
 
 ---
 
