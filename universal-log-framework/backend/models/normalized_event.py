@@ -42,7 +42,20 @@ class NormalizedEvent(Base):
 
     event_hash = Column(
         String(64),
-        nullable=False
+        nullable=False,
+        index=True
+    )
+
+    duplicate_of = Column(
+        UUID(as_uuid=True),
+        ForeignKey("normalized_events.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    is_duplicate = Column(
+        Boolean,
+        nullable=False,
+        default=False
     )
 
     parsed_log = Column(

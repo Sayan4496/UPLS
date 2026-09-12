@@ -49,9 +49,29 @@ function Events() {
     };
 
     useEffect(() => {
-      const timer = window.setTimeout(() => loadEvents(1), 0);
+      const timer = window.setTimeout(async () => {
+        try {
+          setLoading(true);
+          setError("");
+          const data = await getEvents({
+            ...initialFilters,
+            search: searchParams.get("search") || "",
+            page: 1,
+            limit: 50
+          });
+          setEvents(data.events || []);
+          setPage(data.page || 1);
+          setTotalEvents(data.total_events || 0);
+          setTotalPages(data.total_pages || 1);
+        } catch {
+          setEvents([]);
+          setError("Unable to connect to the backend server.");
+        } finally {
+          setLoading(false);
+        }
+      }, 0);
       return () => window.clearTimeout(timer);
-    }, []);
+    }, [searchParams]);
 
     const updateFilter = (name, value) => {
       const nextFilters = { ...filters, [name]: value };

@@ -20,7 +20,9 @@ def save_normalized_event(
     quality_metrics,
     processing_history,
     processing_time,
-    processing_timestamp
+    processing_timestamp,
+    duplicate_of=None,
+    is_duplicate=False
 ):
 
     normalized_event = NormalizedEvent(
@@ -30,6 +32,10 @@ def save_normalized_event(
         upload_id=upload_id,
 
         event_hash=event_hash,
+
+        duplicate_of=duplicate_of,
+
+        is_duplicate=is_duplicate,
 
         parsed_log=parsed_log,
 

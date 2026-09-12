@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from core.database import engine
+from core.database import engine, ensure_database_schema
 from api.upload import router as upload_router
 from api.events import router as events_router
 from api.analytics import router as analytics_router
@@ -29,6 +29,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def startup_event():
+    ensure_database_schema()
 
 
 @app.get("/")
@@ -61,6 +66,8 @@ def health_check():
                 "raw_event_id",
                 "upload_id",
                 "event_hash",
+                "duplicate_of",
+                "is_duplicate",
                 "parsed_log",
                 "normalized_log",
                 "universal_event",

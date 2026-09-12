@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Download, FileJson, FileSpreadsheet, RefreshCw } from "lucide-react";
+import { Download, FileCode2, FileJson, FileSpreadsheet, RefreshCw } from "lucide-react";
 
-import { getEvents } from "../services/api";
+import { exportEventsData } from "../services/api";
 
 function downloadFile(content, filename, type) {
   const blob = new Blob([content], { type });
@@ -20,22 +20,25 @@ function Reports() {
     try {
       setLoading(true);
       setStatus("");
-      const response = await getEvents({ page: 1, limit: 100 });
-      const events = response.events || [];
-      if (!events.length) {
-        setStatus("No events are available to export.");
+
+      const response = await exportEventsData(format);
+      const contentType = response.headers["content-type"] || "application/octet-stream";
+      const blob = response.data;
+
+      if (!(blob instanceof Blob) || !blob.size) {
+        setStatus(`No ${format.toUpperCase()} data was returned from the export endpoint.`);
         return;
       }
-      if (format === "json") {
-        downloadFile(JSON.stringify(events, null, 2), "ulps-events.json", "application/json");
-      } else {
-        const columns = ["event_timestamp", "source_ip", "destination_ip", "event_type", "severity", "action", "message"];
-        const csv = [columns.join(","), ...events.map((event) => columns.map((column) => JSON.stringify(event[column] ?? "")).join(","))].join("\n");
-        downloadFile(csv, "ulps-events.csv", "text/csv");
-      }
-      setStatus(`${events.length} events exported as ${format.toUpperCase()}.`);
-    } catch {
-      setStatus("The event API is unavailable. Nothing was exported.");
+
+      const extension = format === "json" ? "json" : format === "csv" ? "csv" : "ndjson";
+      const fileName = `ulps-events.${extension}`;
+      const responseType = contentType.includes("json") ? "application/json" : contentType.includes("csv") ? "text/csv" : "application/x-ndjson";
+
+      downloadFile(blob, fileName, responseType);
+      setStatus(`Export completed: ${fileName}`);
+    } catch (error) {
+      console.error("Export failed", error);
+      setStatus("The export API is unavailable. Nothing was exported.");
     } finally {
       setLoading(false);
     }
@@ -48,6 +51,7 @@ function Reports() {
       <section className="report-grid">
         <button className="report-card" onClick={() => exportEvents("csv")} disabled={loading}><span className="report-icon green"><FileSpreadsheet size={24} /></span><span><strong>CSV event export</strong><small>Portable spreadsheet format from the latest 100 events.</small></span><Download size={17} /></button>
         <button className="report-card" onClick={() => exportEvents("json")} disabled={loading}><span className="report-icon blue"><FileJson size={24} /></span><span><strong>JSON event export</strong><small>Machine-readable normalized event records.</small></span><Download size={17} /></button>
+        <button className="report-card" onClick={() => exportEvents("ndjson")} disabled={loading}><span className="report-icon purple"><FileCode2 size={24} /></span><span><strong>NDJSON event export</strong><small>Line-delimited JSON records from the stored event stream.</small></span><Download size={17} /></button>
       </section>
     </div>
   );

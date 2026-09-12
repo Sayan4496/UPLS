@@ -257,6 +257,8 @@ def get_event(
         "raw_event_id": str(event.raw_event_id),
         "upload_id": str(event.upload_id),
         "event_hash": event.event_hash,
+        "duplicate_of": str(event.duplicate_of) if event.duplicate_of else None,
+        "is_duplicate": bool(event.is_duplicate),
         "raw_log": raw_event.raw_log if raw_event else None,
         "parsed_data": event.parsed_log,
         "normalized_data": event.normalized_log,

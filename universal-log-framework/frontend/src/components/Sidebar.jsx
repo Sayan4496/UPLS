@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   List,
   Upload,
+  History,
   BarChart3,
   Monitor,
   FileText,
@@ -22,9 +23,17 @@ function Sidebar({ navOpen, onClose }) {
 
   useEffect(() => {
     let active = true;
-    checkBackendHealth().then((result) => {
-      if (active) setHealth({ loading: false, connected: result.connected });
-    });
+
+    const loadHealth = async () => {
+      try {
+        const result = await checkBackendHealth();
+        if (active) setHealth({ loading: false, connected: Boolean(result?.connected) });
+      } catch {
+        if (active) setHealth({ loading: false, connected: false });
+      }
+    };
+
+    loadHealth();
     return () => { active = false; };
   }, []);
 
@@ -46,6 +55,12 @@ function Sidebar({ navOpen, onClose }) {
       name: "Log Upload",
       path: "/upload",
       icon: Upload
+    },
+
+    {
+      name: "Processing History",
+      path: "/processing-history",
+      icon: History
     },
 
     {

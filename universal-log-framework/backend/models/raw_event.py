@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import synonym
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -22,6 +22,24 @@ class RawEvent(Base):
         UUID(as_uuid=True),
         ForeignKey("uploads.id"),
         nullable=False
+    )
+
+    event_hash = Column(
+        String(64),
+        nullable=True,
+        index=True
+    )
+
+    duplicate_of = Column(
+        UUID(as_uuid=True),
+        ForeignKey("raw_events.id", ondelete="SET NULL"),
+        nullable=True
+    )
+
+    is_duplicate = Column(
+        Boolean,
+        nullable=False,
+        default=False
     )
 
     raw_log = Column(

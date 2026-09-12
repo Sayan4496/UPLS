@@ -7,6 +7,27 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- =========================
+-- Processing Jobs
+-- =========================
+
+CREATE TABLE IF NOT EXISTS processing_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    status VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+    total_files INTEGER NOT NULL DEFAULT 0,
+    processed_files INTEGER NOT NULL DEFAULT 0,
+    failed_files INTEGER NOT NULL DEFAULT 0,
+    total_records INTEGER NOT NULL DEFAULT 0,
+    processed_records INTEGER NOT NULL DEFAULT 0,
+    failed_records INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    details JSONB NOT NULL DEFAULT '[]'::jsonb,
+    processing_time DOUBLE PRECISION NOT NULL DEFAULT 0,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- =========================
 -- Uploads Table
 -- =========================
 
@@ -30,6 +51,9 @@ CREATE TABLE uploads (
 CREATE TABLE IF NOT EXISTS raw_events (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     upload_id        UUID NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+    event_hash       VARCHAR(64),
+    duplicate_of     UUID NULL REFERENCES raw_events(id) ON DELETE SET NULL,
+    is_duplicate     BOOLEAN NOT NULL DEFAULT FALSE,
     raw_content      TEXT NOT NULL,
     original_format  VARCHAR(20) NOT NULL,   -- JSON, SYSLOG, CSV, KEY-VALUE, CEF, NETFLOW, UNKNOWN
     checksum         VARCHAR(64) NOT NULL,   -- SHA-256 hex digest of raw_content
@@ -49,6 +73,8 @@ CREATE TABLE IF NOT EXISTS normalized_events (
     raw_event_id         UUID NOT NULL REFERENCES raw_events (id) ON DELETE CASCADE,
     upload_id            UUID NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
     event_hash           VARCHAR(64) NOT NULL,
+    duplicate_of         UUID NULL REFERENCES normalized_events(id) ON DELETE SET NULL,
+    is_duplicate         BOOLEAN NOT NULL DEFAULT FALSE,
     parsed_log           JSONB NOT NULL,
     normalized_log       JSONB NOT NULL,
     universal_event      JSONB,

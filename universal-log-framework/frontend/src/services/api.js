@@ -1,46 +1,80 @@
 import axios from "axios";
 
 
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URLS = [
+
+  typeof window !== "undefined" && window.location?.hostname
+    ? `http://${window.location.hostname}:8000`
+    : "http://localhost:8000",
+  "http://localhost:8000",
+  "http://127.0.0.1:8000"
+
+];
 
 
-const api = axios.create({
+const api = {
 
-  baseURL: API_BASE_URL,
+  get: (url, config = {}) => requestWithFallback(url, {
+    ...config,
+    method: "get"
+  }),
 
-  timeout: 5000,
+  post: (url, data, config = {}) => requestWithFallback(url, {
+    ...config,
+    method: "post",
+    data
+  })
 
-});
+};
+
+
+export const requestWithFallback = async (url, config = {}) => {
+
+  let lastError = null;
+
+  for (const baseUrl of API_BASE_URLS) {
+
+    try {
+
+      return await axios({
+        ...config,
+        url: `${baseUrl}${url}`
+      });
+
+    } catch (error) {
+
+      lastError = error;
+    }
+
+  }
+
+  throw lastError;
+
+};
 
 
 export const checkBackendHealth = async () => {
 
   try {
 
-    const response = await api.get("/health");
+    const response = await requestWithFallback("/health");
 
+    const connected =
+      response?.data?.status === "healthy" ||
+      response?.data?.database === "connected";
 
     return {
-
-      connected:
-        response.data.status === "healthy",
-
-      data: response.data
-
+      connected,
+      data: response?.data ?? null
     };
 
+  } catch (error) {
 
-  } catch {
-
-    console.warn("Backend health check failed");
-
+    console.warn("Backend health check failed", error);
 
     return {
-
       connected: false,
-
       data: null
-
     };
 
   }
@@ -50,15 +84,10 @@ export const checkBackendHealth = async () => {
 
 export const getEvents = async (params = {}) => {
 
-  const response = await api.get(
-
-    "/events/",
-
-    {
-      params
-    }
-
-  );
+  const response = await requestWithFallback("/events/", {
+    method: "get",
+    params
+  });
 
 
   return response.data;
@@ -102,11 +131,40 @@ export const getAnalyticsDashboard = async () => {
 };
 
 
+export const exportEventsData = async (format = "json") => {
+
+  const response = await api.get(`/api/v1/export/${format}`, {
+    responseType: "blob"
+  });
+
+  return response;
+
+};
+
+
 export const previewParserLab = async (rawLog) => {
 
   const response = await api.post("/parser-lab/preview", {
     raw_log: rawLog
   });
+
+  return response.data;
+
+};
+
+
+export const getProcessingJob = async (jobId) => {
+
+  const response = await api.get(`/upload/jobs/${jobId}`);
+
+  return response.data;
+
+};
+
+
+export const getProcessingJobs = async () => {
+
+  const response = await api.get("/upload/jobs");
 
   return response.data;
 

@@ -6,7 +6,8 @@ import Header from "./components/Header";
 
 import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
-import Upload from "./pages/Upload";
+import Upload from "./pages/Upload.jsx";
+import ProcessingHistory from "./pages/ProcessingHistory";
 import Analytics from "./pages/Analytics";
 import Devices from "./pages/Devices";
 import Reports from "./pages/Reports";
@@ -45,6 +46,11 @@ function App() {
               <Route
                 path="/upload"
                 element={<Upload />}
+              />
+
+              <Route
+                path="/processing-history"
+                element={<ProcessingHistory />}
               />
 
               <Route

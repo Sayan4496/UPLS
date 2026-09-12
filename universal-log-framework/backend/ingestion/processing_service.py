@@ -11,6 +11,7 @@ from normalization.normalizer import LogNormalizer
 from normalization.service import save_normalized_event
 
 from models.raw_event import RawEvent
+from models.normalized_event import NormalizedEvent
 
 
 class ProcessingService:
@@ -133,6 +134,7 @@ class ProcessingService:
             "records_received": len(parsed_events),
             "records_parsed": len(parsed_events),
             "records_normalized": 0,
+            "duplicate_events": 0,
             "fallback_used": 0,
             "failed": 0,
             "average_confidence": 0.0,
@@ -210,17 +212,39 @@ class ProcessingService:
 
 
             # --------------------------------
+            # Check for duplicate event fingerprint
+            # --------------------------------
+
+            existing_event = (
+                db.query(NormalizedEvent)
+                .filter(NormalizedEvent.event_hash == event_hash)
+                .order_by(NormalizedEvent.processing_timestamp.asc(), NormalizedEvent.id.asc())
+                .first()
+            )
+
+            original_raw_event = None
+            if existing_event is not None:
+                original_raw_event = (
+                    db.query(RawEvent)
+                    .filter(RawEvent.id == existing_event.raw_event_id)
+                    .first()
+                )
+
+            duplicate_of = existing_event.id if existing_event else None
+            is_duplicate = existing_event is not None
+
+            # --------------------------------
             # Save Raw Event
             # --------------------------------
 
             raw_event = RawEvent(
 
                 upload_id=upload.id,
-
+                event_hash=event_hash,
+                duplicate_of=(original_raw_event.id if original_raw_event else None),
+                is_duplicate=is_duplicate,
                 raw_log=raw_content,
-
                 original_format=file_format,
-
                 checksum=checksum
 
             )
@@ -238,6 +262,10 @@ class ProcessingService:
 
 
             raw_events_created += 1
+
+            if is_duplicate:
+                quality_summary["duplicate_events"] += 1
+                continue
 
 
             # --------------------------------
@@ -385,7 +413,9 @@ class ProcessingService:
                 processing_time=(
                     time.perf_counter() - event_started_at
                 ),
-                processing_timestamp=processing_timestamp
+                processing_timestamp=processing_timestamp,
+                duplicate_of=duplicate_of,
+                is_duplicate=is_duplicate
 
             )
 

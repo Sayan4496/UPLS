@@ -13,13 +13,30 @@ function Dashboard() {
 
   const loadDashboard = async () => {
     setStatus({ loading: true, connected: false, error: "" });
+
     try {
-      const [dashboard, health] = await Promise.all([getDashboardData(), checkBackendHealth()]);
+      const [dashboardResult, healthResult] = await Promise.allSettled([
+        getDashboardData(),
+        checkBackendHealth()
+      ]);
+
+      const dashboard = dashboardResult.status === "fulfilled" ? dashboardResult.value : emptyData;
+      const health = healthResult.status === "fulfilled" ? healthResult.value : { connected: false, data: null };
+      const connected = Boolean(health.connected) || Boolean((dashboard.events || []).length) || Boolean(dashboard.totalEvents);
+
       setData(dashboard);
-      setStatus({ loading: false, connected: health.connected, error: health.connected ? "" : "Database health check failed." });
+      setStatus({
+        loading: false,
+        connected,
+        error: connected ? "" : "The API is unavailable. Connect the backend to load live events."
+      });
     } catch {
       setData(emptyData);
-      setStatus({ loading: false, connected: false, error: "The API is unavailable. Connect the backend to load live events." });
+      setStatus({
+        loading: false,
+        connected: false,
+        error: "The API is unavailable. Connect the backend to load live events."
+      });
     }
   };
 
@@ -62,7 +79,7 @@ function Dashboard() {
         <div className="dashboard-side-column">
           <div className="panel quick-action-panel">
             <div className="panel-header"><div><p className="eyebrow">Workflow</p><h2>Actions</h2></div></div>
-            <a className="action-tile" href="/upload"><span className="action-icon blue"><UploadCloud size={19} /></span><span><strong>Upload logs</strong><small>Process a supported file</small></span><ArrowUpRight size={16} /></a>
+            <a className="action-tile" href="/upload"><span className="action-icon blue"><UploadCloud size={19} /></span><span><strong>Upload logs</strong><small>Process one or multiple files</small></span><ArrowUpRight size={16} /></a>
             <a className="action-tile" href="/events"><span className="action-icon amber"><Clock3 size={19} /></span><span><strong>Review events</strong><small>Filter the live event store</small></span><ArrowUpRight size={16} /></a>
           </div>
           <div className={`panel health-panel ${status.connected ? "is-healthy" : "is-offline"}`}>
