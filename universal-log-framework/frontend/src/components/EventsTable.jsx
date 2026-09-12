@@ -1,4 +1,4 @@
-function EventsTable({ events = [] }) {
+function EventsTable({ events = [], onSelect }) {
   if (!events.length) {
     return (
       <div className="empty-state">
@@ -16,6 +16,8 @@ function EventsTable({ events = [] }) {
         <thead>
           <tr>
             <th>Timestamp</th>
+            <th>Source Type</th>
+            <th>Host</th>
             <th>Source IP</th>
             <th>Destination</th>
             <th>Event Type</th>
@@ -29,13 +31,41 @@ function EventsTable({ events = [] }) {
 
           {events.map((event) => (
 
-            <tr key={event.id}>
+            <tr key={event.id} onClick={() => onSelect?.(event)} className="event-row-clickable">
 
               <td className="timestamp">
                 {event.event_timestamp
-                  ? new Date(event.event_timestamp).toLocaleString()
-                  : "N/A"}
+                  ? new Date(event.event_timestamp).toLocaleString(
+                    undefined,
+                    {
+                      timeZone: "UTC",
+                      year: "numeric",
+                      month: "numeric",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                      second: "2-digit"
+                    }
+                  ) + " UTC"
+                  : event.normalized_at
+                    ? `${new Date(event.normalized_at).toLocaleString(
+                      undefined,
+                      {
+                        timeZone: "UTC",
+                        year: "numeric",
+                        month: "numeric",
+                        day: "numeric",
+                        hour: "numeric",
+                        minute: "2-digit",
+                        second: "2-digit"
+                      }
+                    )} UTC (ingested)`
+                    : "No source timestamp"}
               </td>
+
+              <td>{event.source_format || "UNKNOWN"}</td>
+
+              <td>{event.device_type || event.vendor || event.parsed_log?.host || "N/A"}</td>
 
               <td>
                 <span className="ip-address">

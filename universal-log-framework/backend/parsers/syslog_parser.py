@@ -5,6 +5,9 @@ from parsers.base_parser import BaseParser
 
 class SyslogParser(BaseParser):
 
+    format_name = "SYSLOG"
+    version = "1.0.0"
+
     def parse(self, raw_content: str):
 
         events = []
@@ -63,6 +66,10 @@ class SyslogParser(BaseParser):
 
 
             else:
+
+                if events and events[-1].get("message") == "No message":
+                    events[-1]["message"] = line
+                    continue
 
                 # Store unmatched syslog line
 

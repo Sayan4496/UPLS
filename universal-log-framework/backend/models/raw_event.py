@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy.orm import synonym
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
@@ -23,10 +24,13 @@ class RawEvent(Base):
         nullable=False
     )
 
-    raw_content = Column(
+    raw_log = Column(
+        "raw_content",
         Text,
         nullable=False
     )
+
+    raw_content = synonym("raw_log")
 
     original_format = Column(
         String(20),

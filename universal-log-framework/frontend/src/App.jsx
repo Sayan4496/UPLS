@@ -11,6 +11,7 @@ import Analytics from "./pages/Analytics";
 import Devices from "./pages/Devices";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import ParserLab from "./pages/ParserLab";
 
 import "./App.css";
 
@@ -49,6 +50,11 @@ function App() {
               <Route
                 path="/analytics"
                 element={<Analytics />}
+              />
+
+              <Route
+                path="/parser-lab"
+                element={<ParserLab />}
               />
 
               <Route

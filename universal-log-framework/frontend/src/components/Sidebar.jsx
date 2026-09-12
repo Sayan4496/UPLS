@@ -9,10 +9,11 @@ import {
   Monitor,
   FileText,
   Settings,
-  Shield,
   Server,
-  Database
+  Database,
+  FlaskConical
 } from "lucide-react";
+import brandLogo from "../../22.png";
 import { checkBackendHealth } from "../services/api";
 
 
@@ -54,6 +55,12 @@ function Sidebar({ navOpen, onClose }) {
     },
 
     {
+      name: "Parser Lab",
+      path: "/parser-lab",
+      icon: FlaskConical
+    },
+
+    {
       name: "Devices",
       path: "/devices",
       icon: Monitor
@@ -87,7 +94,7 @@ function Sidebar({ navOpen, onClose }) {
 
         <div className="brand-icon">
 
-          <Shield size={24} />
+          <img src={brandLogo} alt="ULPS logo" className="brand-logo-image" />
 
         </div>
 

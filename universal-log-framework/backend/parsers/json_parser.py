@@ -5,6 +5,9 @@ from parsers.base_parser import BaseParser
 
 class JSONParser(BaseParser):
 
+    format_name = "JSON"
+    version = "1.0.0"
+
     def parse(self, raw_content: str):
 
         try:

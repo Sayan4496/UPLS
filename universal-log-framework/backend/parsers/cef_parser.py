@@ -5,6 +5,9 @@ from parsers.base_parser import BaseParser
 
 class CEFParser(BaseParser):
 
+    format_name = "CEF"
+    version = "1.0.0"
+
     def parse(self, raw_content: str):
 
         events = []

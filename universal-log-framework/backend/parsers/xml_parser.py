@@ -5,6 +5,9 @@ from parsers.base_parser import BaseParser
 
 class XMLParser(BaseParser):
 
+    format_name = "XML"
+    version = "1.0.0"
+
     def parse(self, raw_content: str):
 
         try:

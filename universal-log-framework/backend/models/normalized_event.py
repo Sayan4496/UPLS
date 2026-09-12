@@ -6,10 +6,13 @@ from sqlalchemy import (
     Text,
     DateTime,
     Integer,
-    ForeignKey
+    ForeignKey,
+    Float,
+    Boolean
 )
+from sqlalchemy.orm import synonym
 
-from sqlalchemy.dialects.postgresql import UUID, INET
+from sqlalchemy.dialects.postgresql import UUID, INET, JSONB
 from sqlalchemy.sql import func
 
 from core.database import Base
@@ -28,6 +31,93 @@ class NormalizedEvent(Base):
     raw_event_id = Column(
         UUID(as_uuid=True),
         ForeignKey("raw_events.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    upload_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("uploads.id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    event_hash = Column(
+        String(64),
+        nullable=False
+    )
+
+    parsed_log = Column(
+        JSONB,
+        nullable=False
+    )
+
+    normalized_log = Column(
+        JSONB,
+        nullable=False
+    )
+
+    universal_event = Column(
+        JSONB,
+        nullable=True
+    )
+
+    normalized_data = synonym("normalized_log")
+
+    parser_used = Column(
+        String(100),
+        nullable=False
+    )
+
+    parser_version = Column(
+        String(50),
+        nullable=False,
+        default="1.0.0"
+    )
+
+    normalization_version = Column(
+        String(50),
+        nullable=False,
+        default="1.0.0"
+    )
+
+    source_format = Column(
+        String(20),
+        nullable=False
+    )
+
+    parser_confidence = Column(
+        Float,
+        nullable=False
+    )
+
+    fallback_used = Column(
+        Boolean,
+        nullable=False,
+        default=False
+    )
+
+    parser_metadata = Column(
+        JSONB,
+        nullable=False
+    )
+
+    quality_metrics = Column(
+        JSONB,
+        nullable=True
+    )
+
+    processing_history = Column(
+        JSONB,
+        nullable=True
+    )
+
+    processing_time = Column(
+        Float,
+        nullable=False
+    )
+
+    processing_timestamp = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
         nullable=False
     )
 

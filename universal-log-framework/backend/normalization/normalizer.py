@@ -25,7 +25,7 @@ class LogNormalizer:
         # No timestamp available
         if not timestamp:
 
-            return datetime.now(timezone.utc)
+            return None
 
 
         # Already datetime object
@@ -129,7 +129,7 @@ class LogNormalizer:
         )
 
 
-        return datetime.now(timezone.utc)
+        return None
 
 
     def normalize_severity(self, severity):

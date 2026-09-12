@@ -66,9 +66,47 @@ export const getEvents = async (params = {}) => {
 };
 
 
+export const getEvent = async (eventId) => {
+
+  const response = await api.get(`/events/${eventId}`);
+
+  return response.data;
+
+};
+
+
 export const getEventStats = async () => {
 
   const response = await api.get("/events/stats");
+
+  return response.data;
+
+};
+
+
+export const getParserCoverage = async () => {
+
+  const response = await api.get("/analytics/parser-coverage");
+
+  return response.data;
+
+};
+
+
+export const getAnalyticsDashboard = async () => {
+
+  const response = await api.get("/analytics/dashboard");
+
+  return response.data;
+
+};
+
+
+export const previewParserLab = async (rawLog) => {
+
+  const response = await api.post("/parser-lab/preview", {
+    raw_log: rawLog
+  });
 
   return response.data;
 

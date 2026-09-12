@@ -4,12 +4,60 @@ from models.normalized_event import NormalizedEvent
 def save_normalized_event(
     db,
     raw_event_id,
-    normalized_data
+    upload_id,
+    event_hash,
+    normalized_data,
+    normalized_log,
+    universal_event,
+    parsed_log,
+    parser_used,
+    parser_version,
+    normalization_version,
+    source_format,
+    parser_confidence,
+    fallback_used,
+    parser_metadata,
+    quality_metrics,
+    processing_history,
+    processing_time,
+    processing_timestamp
 ):
 
     normalized_event = NormalizedEvent(
 
         raw_event_id=raw_event_id,
+
+        upload_id=upload_id,
+
+        event_hash=event_hash,
+
+        parsed_log=parsed_log,
+
+        normalized_log=normalized_log,
+
+        universal_event=universal_event,
+
+        parser_used=parser_used,
+
+        parser_version=parser_version,
+
+        normalization_version=normalization_version,
+
+        source_format=source_format,
+
+        parser_confidence=parser_confidence,
+
+        fallback_used=fallback_used,
+
+        parser_metadata=parser_metadata,
+
+        quality_metrics=quality_metrics,
+
+        processing_history=processing_history,
+
+        processing_time=processing_time,
+
+        processing_timestamp=processing_timestamp,
 
         event_timestamp=normalized_data.event_timestamp,
 

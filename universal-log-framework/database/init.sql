@@ -45,24 +45,42 @@ CREATE INDEX IF NOT EXISTS idx_raw_events_checksum ON raw_events (checksum);
 -- One standardized, queryable record per raw event.
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS normalized_events (
-    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    raw_event_id      UUID NOT NULL REFERENCES raw_events (id) ON DELETE CASCADE,
-    event_timestamp   TIMESTAMPTZ,
-    source_ip         INET,
-    destination_ip    INET,
-    source_port       INTEGER CHECK (source_port BETWEEN 0 AND 65535),
-    destination_port  INTEGER CHECK (destination_port BETWEEN 0 AND 65535),
-    severity          VARCHAR(20),   -- e.g. LOW, MEDIUM, HIGH, CRITICAL
-    event_type        VARCHAR(100),
-    action            VARCHAR(50),   -- e.g. ALLOW, DENY, DROP, ALERT
-    device_type       VARCHAR(50),   -- e.g. FIREWALL, IDS, VPN, ROUTER
-    vendor            VARCHAR(50),   -- e.g. PFSENSE, FORTIGATE, SURICATA
-    message           TEXT,
-    normalized_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    raw_event_id         UUID NOT NULL REFERENCES raw_events (id) ON DELETE CASCADE,
+    upload_id            UUID NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+    event_hash           VARCHAR(64) NOT NULL,
+    parsed_log           JSONB NOT NULL,
+    normalized_log       JSONB NOT NULL,
+    universal_event      JSONB,
+    parser_used          VARCHAR(100) NOT NULL,
+    parser_version       VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+    normalization_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+    source_format        VARCHAR(20) NOT NULL,
+    parser_confidence    DOUBLE PRECISION NOT NULL,
+    fallback_used        BOOLEAN NOT NULL DEFAULT FALSE,
+    parser_metadata      JSONB NOT NULL,
+    quality_metrics      JSONB,
+    processing_history   JSONB,
+    processing_time      DOUBLE PRECISION NOT NULL,
+    processing_timestamp TIMESTAMPTZ NOT NULL DEFAULT now(),
+    event_timestamp      TIMESTAMPTZ,
+    source_ip            INET,
+    destination_ip       INET,
+    source_port          INTEGER CHECK (source_port BETWEEN 0 AND 65535),
+    destination_port     INTEGER CHECK (destination_port BETWEEN 0 AND 65535),
+    severity             VARCHAR(20),   -- e.g. LOW, MEDIUM, HIGH, CRITICAL
+    event_type           VARCHAR(100),
+    action               VARCHAR(50),   -- e.g. ALLOW, DENY, DROP, ALERT
+    device_type          VARCHAR(50),   -- e.g. FIREWALL, IDS, VPN, ROUTER
+    vendor               VARCHAR(50),   -- e.g. PFSENSE, FORTIGATE, SURICATA
+    message              TEXT,
+    normalized_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Traceability: always be able to jump from a normalized event to its raw original
 CREATE INDEX IF NOT EXISTS idx_normalized_events_raw_event_id ON normalized_events (raw_event_id);
+CREATE INDEX IF NOT EXISTS idx_normalized_events_upload_id ON normalized_events (upload_id);
+CREATE INDEX IF NOT EXISTS idx_normalized_events_event_hash ON normalized_events (event_hash);
 
 -- Query/filter patterns from the Search & Analytics API
 CREATE INDEX IF NOT EXISTS idx_normalized_events_timestamp ON normalized_events (event_timestamp);
@@ -71,3 +89,22 @@ CREATE INDEX IF NOT EXISTS idx_normalized_events_destination_ip ON normalized_ev
 CREATE INDEX IF NOT EXISTS idx_normalized_events_severity ON normalized_events (severity);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_device_type ON normalized_events (device_type);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_vendor ON normalized_events (vendor);
+
+-- Existing installations can apply the metadata columns without replacing data.
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS raw_event_id UUID;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS upload_id UUID;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS event_hash VARCHAR(64);
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS parsed_log JSONB;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS normalized_log JSONB;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS universal_event JSONB;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS parser_used VARCHAR(100);
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS parser_version VARCHAR(50) DEFAULT '1.0.0';
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS normalization_version VARCHAR(50) DEFAULT '1.0.0';
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS source_format VARCHAR(20);
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS parser_confidence DOUBLE PRECISION;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS fallback_used BOOLEAN DEFAULT FALSE;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS parser_metadata JSONB;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS quality_metrics JSONB;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS processing_history JSONB;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS processing_time DOUBLE PRECISION;
+ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS processing_timestamp TIMESTAMPTZ DEFAULT now();

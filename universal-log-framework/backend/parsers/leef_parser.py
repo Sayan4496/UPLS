@@ -3,6 +3,9 @@ from parsers.base_parser import BaseParser
 
 class LEEFParser(BaseParser):
 
+    format_name = "LEEF"
+    version = "1.0.0"
+
     def parse(self, raw_content: str):
 
         events = []

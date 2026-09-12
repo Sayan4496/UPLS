@@ -6,6 +6,9 @@ from parsers.base_parser import BaseParser
 
 class CSVParser(BaseParser):
 
+    format_name = "CSV"
+    version = "1.0.0"
+
     def parse(self, raw_content: str):
 
         try:
