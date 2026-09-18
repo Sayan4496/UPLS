@@ -11,12 +11,18 @@ from sqlalchemy.orm import Session
 from core.database import SessionLocal
 from models.normalized_event import NormalizedEvent
 from models.raw_event import RawEvent
+from datalake.exporter import DataLakeExporter
 
 
 router = APIRouter(
     prefix="/api/v1/export",
     tags=["Export"]
 )
+
+
+@router.get("/datalake/status")
+def datalake_status():
+    return DataLakeExporter.read_status()
 
 
 def get_db():

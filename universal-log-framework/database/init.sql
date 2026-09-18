@@ -115,6 +115,23 @@ CREATE INDEX IF NOT EXISTS idx_normalized_events_destination_ip ON normalized_ev
 CREATE INDEX IF NOT EXISTS idx_normalized_events_severity ON normalized_events (severity);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_device_type ON normalized_events (device_type);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_vendor ON normalized_events (vendor);
+CREATE INDEX IF NOT EXISTS idx_normalized_events_normalized_at_id ON normalized_events (normalized_at, id);
+
+CREATE TABLE IF NOT EXISTS datalake_export_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    status VARCHAR(20) NOT NULL DEFAULT 'idle',
+    last_run_at TIMESTAMPTZ,
+    last_error TEXT,
+    rows_exported BIGINT NOT NULL DEFAULT 0,
+    watermark_normalized_at TIMESTAMPTZ,
+    watermark_id UUID,
+    partition_count INTEGER NOT NULL DEFAULT 0,
+    partition_coverage JSONB NOT NULL DEFAULT '[]'::jsonb
+);
+
+INSERT INTO datalake_export_state (id)
+VALUES (1)
+ON CONFLICT (id) DO NOTHING;
 
 -- Existing installations can apply the metadata columns without replacing data.
 ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS raw_event_id UUID;

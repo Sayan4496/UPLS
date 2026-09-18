@@ -58,6 +58,41 @@ def ensure_database_schema():
 
         connection.execute(text("ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS duplicate_of UUID"))
         connection.execute(text("ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN NOT NULL DEFAULT FALSE"))
+        connection.execute(text("CREATE INDEX IF NOT EXISTS idx_normalized_events_normalized_at_id ON normalized_events (normalized_at, id)"))
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS datalake_export_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                status VARCHAR(20) NOT NULL DEFAULT 'idle',
+                last_run_at TIMESTAMPTZ,
+                last_error TEXT,
+                rows_exported BIGINT NOT NULL DEFAULT 0,
+                watermark_normalized_at TIMESTAMPTZ,
+                watermark_id UUID,
+                partition_count INTEGER NOT NULL DEFAULT 0
+            )
+        """))
+        connection.execute(text("ALTER TABLE datalake_export_state ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'idle'"))
+        connection.execute(text("ALTER TABLE datalake_export_state ADD COLUMN IF NOT EXISTS last_run_at TIMESTAMPTZ"))
+        connection.execute(text("ALTER TABLE datalake_export_state ADD COLUMN IF NOT EXISTS watermark_normalized_at TIMESTAMPTZ"))
+        connection.execute(text("ALTER TABLE datalake_export_state ADD COLUMN IF NOT EXISTS watermark_id UUID"))
+        connection.execute(text("ALTER TABLE datalake_export_state ADD COLUMN IF NOT EXISTS partition_count INTEGER NOT NULL DEFAULT 0"))
+        connection.execute(text("ALTER TABLE datalake_export_state ADD COLUMN IF NOT EXISTS partition_coverage JSONB NOT NULL DEFAULT '[]'::jsonb"))
+        connection.execute(text("""
+            UPDATE datalake_export_state
+            SET last_run_at = COALESCE(last_run_at, last_export_at),
+                watermark_normalized_at = COALESCE(watermark_normalized_at, last_exported_normalized_at),
+                watermark_id = COALESCE(watermark_id, last_exported_id),
+                partition_count = CASE
+                    WHEN partition_count = 0 THEN jsonb_array_length(partition_coverage)
+                    ELSE partition_count
+                END
+            WHERE id = 1
+        """))
+        connection.execute(text("""
+            INSERT INTO datalake_export_state (id)
+            VALUES (1)
+            ON CONFLICT (id) DO NOTHING
+        """))
 
 
 def get_db():
