@@ -1,5 +1,39 @@
 services:
 
+  minio:
+
+    image: alpine/minio:RELEASE.2025-10-15T17-29-55Z
+
+    container_name: ulpf-minio
+
+    restart: unless-stopped
+
+    user: "0:0"
+
+    command: server /data --console-address ":9001"
+
+    environment:
+
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+
+    ports:
+
+      - "9000:9000"
+      - "9001:9001"
+
+    volumes:
+
+      - minio_data:/data
+
+    healthcheck:
+
+      test: ["CMD-SHELL", "wget --spider --quiet http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
   database:
 
     image: postgres:16
@@ -25,6 +59,14 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
+    healthcheck:
+
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ulpf_database"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 
   backend:
 
@@ -43,6 +85,13 @@ services:
     environment:
 
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@database:5432/ulpf_database
+      DATA_LAKE_ENABLED: ${DATA_LAKE_ENABLED:-false}
+      DATA_LAKE_EXPORT_INTERVAL_SECONDS: ${DATA_LAKE_EXPORT_INTERVAL_SECONDS:-300}
+      DATA_LAKE_BATCH_SIZE: ${DATA_LAKE_BATCH_SIZE:-1000}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ulpf-datalake}
 
     volumes:
 
@@ -53,6 +102,41 @@ services:
     depends_on:
 
       - database
+
+  ulpf-datalake-exporter:
+
+    build:
+
+      context: ./backend
+
+    container_name: ulpf-datalake-exporter
+
+    restart: unless-stopped
+
+    environment:
+
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@database:5432/ulpf_database
+      DATA_LAKE_ENABLED: ${DATA_LAKE_ENABLED:-false}
+      DATA_LAKE_EXPORT_INTERVAL_SECONDS: ${DATA_LAKE_EXPORT_INTERVAL_SECONDS:-300}
+      DATA_LAKE_BATCH_SIZE: ${DATA_LAKE_BATCH_SIZE:-1000}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ulpf-datalake}
+      PYTHONUNBUFFERED: "1"
+
+    volumes:
+
+      - ./backend:/app
+
+    command: python datalake_exporter.py
+
+    depends_on:
+
+      minio:
+        condition: service_healthy
+      database:
+        condition: service_healthy
 
 
   frontend:
@@ -83,3 +167,5 @@ services:
 volumes:
 
   postgres_data:
+
+  minio_data:
