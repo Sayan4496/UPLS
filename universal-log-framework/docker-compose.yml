@@ -1,5 +1,47 @@
 services:
 
+  redpanda:
+
+    image: redpandadata/redpanda:v24.3.6
+
+    container_name: ulpf-redpanda
+
+    restart: unless-stopped
+
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092
+
+    ports:
+
+      - "9092:9092"
+
+    volumes:
+
+      - redpanda_data:/var/lib/redpanda/data
+
+    healthcheck:
+
+      test: ["CMD-SHELL", "rpk cluster health -e"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
   database:
 
     image: postgres:16
@@ -25,6 +67,14 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
+    healthcheck:
+
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ulpf_database"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 
   backend:
 
@@ -43,6 +93,10 @@ services:
     environment:
 
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@database:5432/ulpf_database
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_INGESTED_TOPIC: raw-logs-ingested
+      KAFKA_DLQ_TOPIC: raw-logs-dlq
+      KAFKA_CONSUMER_GROUP: ulpf-worker
 
     volumes:
 
@@ -53,6 +107,38 @@ services:
     depends_on:
 
       - database
+
+  ulpf-worker:
+
+    build:
+
+      context: ./backend
+
+    container_name: ulpf-worker
+
+    restart: unless-stopped
+
+    environment:
+
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@database:5432/ulpf_database
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      KAFKA_INGESTED_TOPIC: raw-logs-ingested
+      KAFKA_DLQ_TOPIC: raw-logs-dlq
+      KAFKA_CONSUMER_GROUP: ulpf-worker
+      PYTHONUNBUFFERED: "1"
+
+    volumes:
+
+      - ./backend:/app
+
+    command: python worker.py
+
+    depends_on:
+
+      database:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
 
 
   frontend:
@@ -83,3 +169,5 @@ services:
 volumes:
 
   postgres_data:
+
+  redpanda_data:

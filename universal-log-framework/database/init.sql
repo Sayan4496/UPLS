@@ -12,7 +12,9 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS processing_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    status VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    message_id VARCHAR(100),
+    queue_offset BIGINT,
     total_files INTEGER NOT NULL DEFAULT 0,
     processed_files INTEGER NOT NULL DEFAULT 0,
     failed_files INTEGER NOT NULL DEFAULT 0,
