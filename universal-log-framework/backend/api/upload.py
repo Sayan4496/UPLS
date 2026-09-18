@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import time
 from typing import List
 
-from fastapi import APIRouter, BackgroundTasks, UploadFile, File, HTTPException
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File, HTTPException, Request
 
 from core.database import SessionLocal
 
@@ -13,6 +13,7 @@ from ingestion.validator import validate_file
 from ingestion.file_handler import read_uploaded_file
 
 from ingestion.processing_service import ProcessingService
+from ulpf_queue.producer import KafkaProducer
 
 
 router = APIRouter(
@@ -50,7 +51,7 @@ def _process_upload_content(db, filename, content):
     }
 
 
-async def _process_single_upload(db, file: UploadFile):
+async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer | None = None):
     content = await read_uploaded_file(file)
     started_counter = time.perf_counter()
     job = ProcessingJob(total_files=1, status="PROCESSING", started_at=datetime.now(timezone.utc))
@@ -60,6 +61,15 @@ async def _process_single_upload(db, file: UploadFile):
 
     try:
         result = _process_upload_content(db, file.filename, content)
+        if producer is not None:
+            await producer.publish(
+                upload=db.query(Upload).filter(Upload.id == result["upload_id"]).one(),
+                raw_content=content,
+                source_metadata={
+                    "filename": file.filename,
+                    "file_type": result["file_type"],
+                },
+            )
         elapsed = time.perf_counter() - started_counter
         parsed_records = result["processing_result"].get("parsed_events", 0)
         job.details = [_file_detail(file.filename, result, elapsed)]
@@ -144,7 +154,7 @@ def _file_detail(filename, result, elapsed, error=None):
     }
 
 
-def _run_batch_job(job_id, file_payloads):
+async def _run_batch_job(job_id, file_payloads, producer: KafkaProducer | None = None):
     db = SessionLocal()
     job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
 
@@ -161,6 +171,15 @@ def _run_batch_job(job_id, file_payloads):
             file_started = time.perf_counter()
             try:
                 result = _process_upload_content(db, filename, content)
+                if producer is not None:
+                    await producer.publish(
+                        upload=db.query(Upload).filter(Upload.id == result["upload_id"]).one(),
+                        raw_content=content,
+                        source_metadata={
+                            "filename": filename,
+                            "file_type": result["file_type"],
+                        },
+                    )
                 processing_result = result["processing_result"]
                 elapsed = time.perf_counter() - file_started
                 job.details = list(job.details or []) + [_file_detail(filename, result, elapsed)]
@@ -197,11 +216,15 @@ def _run_batch_job(job_id, file_payloads):
 
 
 @router.post("/")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(request: Request, file: UploadFile = File(...)):
     db = SessionLocal()
 
     try:
-        result = await _process_single_upload(db, file)
+        result = await _process_single_upload(
+            db,
+            file,
+            getattr(request.app.state, "kafka_producer", None),
+        )
 
         return {
             "message": "File processed successfully",
@@ -228,6 +251,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 @router.post("/batch", status_code=202)
 async def upload_batch(
+    request: Request,
     background_tasks: BackgroundTasks,
     files: List[UploadFile] = File(...)
 ):
@@ -258,7 +282,12 @@ async def upload_batch(
         job_response = _job_payload(job)
         db.close()
 
-        background_tasks.add_task(_run_batch_job, job.id, file_payloads)
+        background_tasks.add_task(
+            _run_batch_job,
+            job.id,
+            file_payloads,
+            getattr(request.app.state, "kafka_producer", None),
+        )
 
         return {
             "message": "Batch processing job created",
