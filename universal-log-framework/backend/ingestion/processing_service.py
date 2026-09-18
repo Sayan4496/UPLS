@@ -16,6 +16,8 @@ from models.normalized_event import NormalizedEvent
 
 class ProcessingService:
 
+    PERSISTENCE_BATCH_SIZE = 500
+
     def _build_quality_metrics(self, parsed_event, normalized_log, parser_confidence, fallback_used):
 
         normalized_log = normalized_log or {}
@@ -89,9 +91,8 @@ class ProcessingService:
 
         detector = FormatDetector()
 
-        file_format = detector.detect(
-            raw_content
-        )
+        detection_result = detector.detect_with_confidence(raw_content)
+        file_format = detection_result["detected_format"]
 
 
         # --------------------------------
@@ -159,7 +160,7 @@ class ProcessingService:
         )
         parser_version = getattr(parser, "version", "1.0.0")
         normalization_version = "1.0.0"
-        parser_confidence = 0.0 if fallback_used else 0.98
+        parser_confidence = detection_result["confidence"]
 
         parser_metadata = {
             "parser_used": parser_used,
@@ -169,6 +170,8 @@ class ProcessingService:
             "confidence": parser_confidence,
             "fallback_used": fallback_used
         }
+
+        events_since_commit = 0
 
         for event in parsed_events:
 
@@ -254,17 +257,17 @@ class ProcessingService:
                 raw_event
             )
 
-            db.commit()
-
-            db.refresh(
-                raw_event
-            )
+            db.flush()
 
 
             raw_events_created += 1
+            events_since_commit += 1
 
             if is_duplicate:
                 quality_summary["duplicate_events"] += 1
+                if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
+                    db.commit()
+                    events_since_commit = 0
                 continue
 
 
@@ -390,7 +393,7 @@ class ProcessingService:
             # Save Normalized Event
             # --------------------------------
 
-            save_normalized_event(
+            normalized_event_id = save_normalized_event(
 
                 db=db,
 
@@ -419,6 +422,25 @@ class ProcessingService:
 
             )
 
+            if normalized_event_id is None:
+                existing_event = (
+                    db.query(NormalizedEvent)
+                    .filter(NormalizedEvent.event_hash == event_hash)
+                    .one()
+                )
+                original_raw_event = (
+                    db.query(RawEvent)
+                    .filter(RawEvent.id == existing_event.raw_event_id)
+                    .one()
+                )
+                raw_event.duplicate_of = original_raw_event.id
+                raw_event.is_duplicate = True
+                quality_summary["duplicate_events"] += 1
+                if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
+                    db.commit()
+                    events_since_commit = 0
+                continue
+
 
             normalized_events_created += 1
             quality_summary["records_normalized"] += 1
@@ -432,6 +454,14 @@ class ProcessingService:
                 quality_summary["detection_confidence"],
                 parser_confidence
             )
+
+            if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
+                db.commit()
+                events_since_commit = 0
+
+
+        if events_since_commit:
+            db.commit()
 
 
         # --------------------------------
