@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock3, FileSearch, RefreshCw, X } from "lucide-react";
+import { Clock3, RefreshCw, X } from "lucide-react";
 
 import { getProcessingJobs } from "../services/api";
 
@@ -23,7 +23,11 @@ function ProcessingHistory() {
   };
 
   useEffect(() => {
-    loadJobs();
+    const timer = window.setTimeout(() => {
+      loadJobs();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, []);
 
   const historyRows = jobs.flatMap((job) => {

@@ -1,12 +1,13 @@
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from core.database import SessionLocal
 from ingestion.processing_service import ProcessingService
 from models.upload import Upload
+from ulpf_queue.producer import KafkaProducer
 
 
 router = APIRouter(
@@ -24,7 +25,7 @@ class LogIngestRequest(BaseModel):
 
 
 @router.post("/ingest")
-async def ingest_log(payload: LogIngestRequest):
+async def ingest_log(request: Request, payload: LogIngestRequest):
     db = SessionLocal()
 
     try:
@@ -61,6 +62,21 @@ async def ingest_log(payload: LogIngestRequest):
             upload=upload,
             raw_content=raw_content
         )
+
+        producer: KafkaProducer | None = getattr(
+            request.app.state,
+            "kafka_producer",
+            None,
+        )
+        if producer is not None:
+            await producer.publish(
+                upload=upload,
+                raw_content=raw_content,
+                source_metadata={
+                    "source": payload.source,
+                    "ingestion_type": "rest",
+                },
+            )
 
         return {
             "message": "Log ingested successfully",

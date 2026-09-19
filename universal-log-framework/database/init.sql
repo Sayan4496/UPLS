@@ -12,7 +12,9 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS processing_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    status VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+    status VARCHAR(20) NOT NULL DEFAULT 'queued',
+    message_id VARCHAR(100),
+    queue_offset BIGINT,
     total_files INTEGER NOT NULL DEFAULT 0,
     processed_files INTEGER NOT NULL DEFAULT 0,
     failed_files INTEGER NOT NULL DEFAULT 0,
@@ -72,7 +74,7 @@ CREATE TABLE IF NOT EXISTS normalized_events (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_event_id         UUID NOT NULL REFERENCES raw_events (id) ON DELETE CASCADE,
     upload_id            UUID NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
-    event_hash           VARCHAR(64) NOT NULL,
+    event_hash           VARCHAR(64) NOT NULL UNIQUE,
     duplicate_of         UUID NULL REFERENCES normalized_events(id) ON DELETE SET NULL,
     is_duplicate         BOOLEAN NOT NULL DEFAULT FALSE,
     parsed_log           JSONB NOT NULL,

@@ -19,7 +19,7 @@ function Upload() {
     let job = await getProcessingJob(jobId);
     setProcessingJob(job);
 
-    while (job.status === "QUEUED" || job.status === "PROCESSING") {
+    while (job.status === "queued" || job.status === "processing") {
       await new Promise((resolve) => setTimeout(resolve, 500));
       job = await getProcessingJob(jobId);
       setProcessingJob(job);
@@ -61,7 +61,7 @@ function Upload() {
         const completedJob = await waitForJob(response.data.job_id);
         setResult({ job: completedJob });
         setMessage(
-          completedJob.status === "COMPLETED"
+          completedJob.status === "done"
             ? "Batch processed successfully."
             : "Batch completed with failures."
         );
