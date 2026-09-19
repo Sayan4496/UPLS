@@ -1656,13 +1656,15 @@ body {
 }
 
 .job-status.complete,
-.job-status.completed {
+.job-status.completed,
+.job-status.done {
   color: #047857;
   background: rgba(52, 211, 153, 0.16);
 }
 
 .job-status.partial,
-.job-status.processing {
+.job-status.processing,
+.job-status.queued {
   color: #a16207;
   background: rgba(250, 204, 21, 0.18);
 }
@@ -1670,6 +1672,11 @@ body {
 .job-status.failed {
   color: #be123c;
   background: rgba(251, 113, 133, 0.16);
+}
+
+.job-status.dead_letter {
+  color: #7c2d12;
+  background: rgba(251, 146, 60, 0.18);
 }
 
 .history-detail-backdrop {

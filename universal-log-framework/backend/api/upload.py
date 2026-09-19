@@ -54,7 +54,7 @@ def _process_upload_content(db, filename, content):
 async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer | None = None):
     content = await read_uploaded_file(file)
     started_counter = time.perf_counter()
-    job = ProcessingJob(total_files=1, status="PROCESSING", started_at=datetime.now(timezone.utc))
+    job = ProcessingJob(total_files=1, status="processing", started_at=datetime.now(timezone.utc))
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -77,7 +77,7 @@ async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer |
         job.total_records = parsed_records
         job.processed_records = parsed_records
         job.processed_files = 1
-        job.status = "COMPLETED"
+        job.status = "done"
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
 
@@ -88,7 +88,7 @@ async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer |
     except Exception as error:
         db.rollback()
         job = db.query(ProcessingJob).filter(ProcessingJob.id == job.id).first()
-        job.status = "FAILED"
+        job.status = "failed"
         job.failed_files = 1
         job.error_message = str(error)
         job.completed_at = datetime.now(timezone.utc)
@@ -103,6 +103,8 @@ def _job_payload(job):
     return {
         "job_id": str(job.id),
         "status": job.status,
+        "message_id": job.message_id,
+        "queue_offset": job.queue_offset,
         "files": job.total_files,
         "processed": job.processed_files,
         "failed": job.failed_files,
@@ -163,7 +165,7 @@ async def _run_batch_job(job_id, file_payloads, producer: KafkaProducer | None =
         return
 
     try:
-        job.status = "PROCESSING"
+        job.status = "processing"
         job.started_at = datetime.now(timezone.utc)
         db.commit()
 
@@ -199,7 +201,7 @@ async def _run_batch_job(job_id, file_payloads, producer: KafkaProducer | None =
             db.commit()
 
         job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
-        job.status = "FAILED" if job.failed_files else "COMPLETED"
+        job.status = "failed" if job.failed_files else "done"
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
 
@@ -207,7 +209,7 @@ async def _run_batch_job(job_id, file_payloads, producer: KafkaProducer | None =
         db.rollback()
         job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
         if job:
-            job.status = "FAILED"
+            job.status = "failed"
             job.error_message = str(error)
             job.completed_at = datetime.now(timezone.utc)
             db.commit()

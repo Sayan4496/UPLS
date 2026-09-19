@@ -35,7 +35,7 @@ def ensure_database_schema():
         connection.execute(text("""
             CREATE TABLE IF NOT EXISTS processing_jobs (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-                status VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+                status VARCHAR(20) NOT NULL DEFAULT 'queued',
                 total_files INTEGER NOT NULL DEFAULT 0,
                 processed_files INTEGER NOT NULL DEFAULT 0,
                 failed_files INTEGER NOT NULL DEFAULT 0,
@@ -52,6 +52,9 @@ def ensure_database_schema():
         """))
         connection.execute(text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS details JSONB NOT NULL DEFAULT '[]'::jsonb"))
         connection.execute(text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS processing_time DOUBLE PRECISION NOT NULL DEFAULT 0"))
+        connection.execute(text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS message_id VARCHAR(100)"))
+        connection.execute(text("ALTER TABLE processing_jobs ADD COLUMN IF NOT EXISTS queue_offset BIGINT"))
+        connection.execute(text("UPDATE processing_jobs SET status = LOWER(status) WHERE status IN ('QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED')"))
         connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS event_hash VARCHAR(64)"))
         connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS duplicate_of UUID"))
         connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN NOT NULL DEFAULT FALSE"))
