@@ -43,9 +43,6 @@ def get_events(
 
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
-    
-    sort_by: str = Query("event_timestamp"),
-    order: str = Query("desc"),
 
     db: Session = Depends(get_db)
 ):
@@ -184,7 +181,6 @@ def get_events(
         "events": events
     }
 
-
 # GET EVENT STATISTICS
 # IMPORTANT: This must come BEFORE /{event_id}
 @router.get("/stats")
@@ -286,46 +282,3 @@ def get_event(
             "message": event.message
         }
     }
-
-    # Allowed sorting fields
-    allowed_sort_fields = [
-        "event_timestamp",
-        "severity",
-        "source_ip",
-        "destination_ip",
-        "event_type"
-    ]
-
-
-    if sort_by not in allowed_sort_fields:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid sort field"
-        )
-
-
-    sort_column = getattr(
-        NormalizedEvent,
-        sort_by
-    )
-
-
-    if order.lower() == "asc":
-
-        query = query.order_by(
-            sort_column.asc()
-        )
-
-    elif order.lower() == "desc":
-
-        query = query.order_by(
-            sort_column.desc()
-        )
-
-    else:
-
-        raise HTTPException(
-            status_code=400,
-            detail="Order must be asc or desc"
-        )
