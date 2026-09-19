@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -9,12 +11,32 @@ from api.analytics import router as analytics_router
 from api.parser_lab import router as parser_lab_router
 from api.logs import router as logs_router
 from api.export import router as export_router
+from ulpf_queue.producer import KafkaProducer, is_queue_enabled
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    ensure_database_schema()
+    producer = None
+
+    if is_queue_enabled():
+        producer = KafkaProducer()
+        await producer.start()
+
+    app.state.kafka_producer = producer
+
+    try:
+        yield
+    finally:
+        if producer is not None:
+            await producer.stop()
 
 
 app = FastAPI(
     title="Universal Log Pre-processing Framework",
     description="A framework for parsing and normalizing heterogeneous network device logs",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -29,11 +51,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def startup_event():
-    ensure_database_schema()
 
 
 @app.get("/")
