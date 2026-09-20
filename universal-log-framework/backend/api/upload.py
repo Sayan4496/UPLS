@@ -133,6 +133,8 @@ def _file_detail(filename, result, elapsed, error=None):
             "parser": None,
             "parser_version": None,
             "quality_score": 0,
+            "skipped_line_count": getattr(error, "skipped_line_count", 0),
+            "parse_errors": getattr(error, "parse_errors", []),
             "processing_time": round(elapsed, 3),
             "error": str(error)
         }
@@ -151,6 +153,8 @@ def _file_detail(filename, result, elapsed, error=None):
         "parser": f"{processing_result.get('format', 'unknown').lower()}_parser",
         "parser_version": "1.0.0",
         "quality_score": metrics.get("schema_completeness", 0),
+        "skipped_line_count": metrics.get("skipped_line_count", 0),
+        "parse_errors": metrics.get("parse_errors", []),
         "processing_time": round(elapsed, 3),
         "error": None
     }

@@ -1,11 +1,11 @@
 import hashlib
 import json
+import logging
 import time
 from datetime import datetime, timezone
 from dataclasses import asdict
 
-from detection.format_detector import FormatDetector
-from registry.parser_registry import get_parser
+from registry.parser_registry import detect_best_parser
 
 from normalization.normalizer import LogNormalizer
 from normalization.service import save_normalized_event
@@ -14,9 +14,17 @@ from models.raw_event import RawEvent
 from models.normalized_event import NormalizedEvent
 
 
+class ParserOutputError(ValueError):
+    def __init__(self, message, skipped_line_count=0, parse_errors=None):
+        super().__init__(message)
+        self.skipped_line_count = skipped_line_count
+        self.parse_errors = parse_errors or []
+
+
 class ProcessingService:
 
     PERSISTENCE_BATCH_SIZE = 500
+    logger = logging.getLogger("ulpf-processing")
 
     def _build_quality_metrics(self, parsed_event, normalized_log, parser_confidence, fallback_used):
 
@@ -89,35 +97,39 @@ class ProcessingService:
         # STEP 1: Detect log format
         # --------------------------------
 
-        detector = FormatDetector()
+        raw_bytes = raw_content.encode("utf-8")
+        parser_match = detect_best_parser(raw_bytes)
+        parser = parser_match.parser
+        parser_confidence = parser_match.confidence
+        file_format = parser.supported_formats[0] if parser.supported_formats else "UNKNOWN"
+        fallback_used = parser.name == "FallbackParser"
 
-        detection_result = detector.detect_with_confidence(raw_content)
-        file_format = detection_result["detected_format"]
+        if fallback_used or parser_confidence < 0.5:
+            self.logger.warning(
+                "Low-confidence parser selection for filename=%s score=%s breakdown=%s",
+                getattr(upload, "filename", "unknown"),
+                parser_confidence,
+                parser_match.score_breakdown,
+            )
 
 
         # --------------------------------
         # STEP 2: Get correct parser
         # --------------------------------
 
-        parser = get_parser(file_format)
-
-
         # --------------------------------
         # STEP 3: Parse raw content
         # --------------------------------
 
-        parsed_events = parser.parse(
-            raw_content
-        )
+        parsed_events, skipped_line_count, parse_errors = parser.parse(raw_bytes)
 
-
-        # Make sure parsed_events is a list
-
-        if isinstance(parsed_events, dict):
-
-            parsed_events = [
-                parsed_events
-            ]
+        if raw_content.strip() and not parsed_events:
+            reason = parse_errors[0] if parse_errors else "no events produced"
+            raise ParserOutputError(
+                f"Parser {parser.name} produced zero events from non-empty input: {reason}",
+                skipped_line_count=skipped_line_count,
+                parse_errors=parse_errors,
+            )
 
 
         # --------------------------------
@@ -144,7 +156,9 @@ class ProcessingService:
             "schema_completeness": 0.0,
             "unknown_fields": 0,
             "missing_required_fields": 0,
-            "detection_confidence": 0.0
+            "detection_confidence": parser_confidence,
+            "skipped_line_count": skipped_line_count,
+            "parse_errors": parse_errors,
         }
 
 
@@ -152,16 +166,13 @@ class ProcessingService:
         # STEP 5: Process every event
         # --------------------------------
 
-        fallback_used = file_format == "UNKNOWN"
         parser_used = (
             "fallback_parser"
             if fallback_used
-            else f"{file_format.lower()}_parser"
+            else parser.name
         )
         parser_version = getattr(parser, "version", "1.0.0")
         normalization_version = "1.0.0"
-        parser_confidence = detection_result["confidence"]
-
         parser_metadata = {
             "parser_used": parser_used,
             "parser_version": parser_version,
@@ -176,17 +187,6 @@ class ProcessingService:
         for event in parsed_events:
 
             event_started_at = time.perf_counter()
-
-
-            # Convert event to string
-
-            if isinstance(event, dict):
-
-                event_raw_content = json.dumps(event, default=str)
-
-            else:
-
-                event_raw_content = str(event)
 
 
             # --------------------------------
@@ -275,9 +275,8 @@ class ProcessingService:
             # Normalize event
             # --------------------------------
 
-            normalized_data = normalizer.normalize(
-                event
-            )
+            event = parser.normalize(event)
+            normalized_data = normalizer.normalize(event)
 
             normalized_log = asdict(normalized_data)
 

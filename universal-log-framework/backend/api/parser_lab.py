@@ -4,9 +4,8 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Body
 
-from detection.format_detector import FormatDetector
 from normalization.normalizer import LogNormalizer
-from registry.parser_registry import ParserRegistry, get_parser
+from registry.parser_registry import ParserRegistry, detect_best_parser
 
 
 router = APIRouter(
@@ -58,12 +57,13 @@ def preview_log(payload: dict = Body(...)):
             "error": "Paste a log entry to begin parsing."
         }
 
-    detection_result = FormatDetector.detect_with_confidence(raw_content)
-    source_format = detection_result["detected_format"]
-    fallback_used = source_format == "UNKNOWN"
-    parser_name = "fallback_parser" if fallback_used else f"{source_format.lower()}_parser"
+    parser_match = detect_best_parser(raw_content.encode("utf-8"))
+    parser = parser_match.parser
+    source_format = parser.supported_formats[0] if parser.supported_formats else "UNKNOWN"
+    fallback_used = parser.name == "FallbackParser"
+    parser_name = "fallback_parser" if fallback_used else parser.name
 
-    if source_format == "UNKNOWN":
+    if fallback_used:
         return {
             "raw_log": raw_content,
             "parsed_data": None,
@@ -71,10 +71,9 @@ def preview_log(payload: dict = Body(...)):
                 "name": "FallbackParser",
                 "parser_used": parser_name,
                 "source_format": source_format,
-                "confidence": detection_result["confidence"],
+                "confidence": parser_match.confidence,
                 "fallback_used": fallback_used,
-                "score_breakdown": detection_result.get("score_breakdown", {}),
-                "details": detection_result.get("details", {})
+                "score_breakdown": parser_match.score_breakdown,
             },
             "normalized": None,
             "attributes": {},
@@ -82,15 +81,12 @@ def preview_log(payload: dict = Body(...)):
             "error": "Unable to identify a supported log format"
         }
 
-    parser = get_parser(source_format)
-
     try:
-        parsed_events = parser.parse(raw_content)
+        parsed_events, skipped_line_count, parse_errors = parser.parse(raw_content.encode("utf-8"))
+        if not parsed_events:
+            raise ValueError(parse_errors[0] if parse_errors else "Parser produced zero events")
 
-        if isinstance(parsed_events, dict):
-            parsed_events = [parsed_events]
-
-        parsed_data = parsed_events[0] if parsed_events else {}
+        parsed_data = parser.normalize(parsed_events[0])
         normalized_data = asdict(LogNormalizer().normalize(parsed_data))
         normalized_data = json.loads(json.dumps(normalized_data, default=str))
 
@@ -119,10 +115,11 @@ def preview_log(payload: dict = Body(...)):
                 "name": parser.__class__.__name__,
                 "parser_used": parser_name,
                 "source_format": source_format,
-                "confidence": detection_result["confidence"],
+                "confidence": parser_match.confidence,
                 "fallback_used": fallback_used,
-                "score_breakdown": detection_result.get("score_breakdown", {}),
-                "details": detection_result.get("details", {})
+                "score_breakdown": parser_match.score_breakdown,
+                "skipped_line_count": skipped_line_count,
+                "parse_errors": parse_errors,
             },
             "normalized": normalized_data,
             "attributes": extract_attributes(parsed_data, raw_content)
@@ -136,10 +133,9 @@ def preview_log(payload: dict = Body(...)):
                 "name": parser.__class__.__name__,
                 "parser_used": parser_name,
                 "source_format": source_format,
-                "confidence": detection_result["confidence"],
+                "confidence": parser_match.confidence,
                 "fallback_used": fallback_used,
-                "score_breakdown": detection_result.get("score_breakdown", {}),
-                "details": detection_result.get("details", {})
+                "score_breakdown": parser_match.score_breakdown,
             },
             "normalized": None,
             "attributes": {},
