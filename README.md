@@ -22,9 +22,13 @@ The Universal Log Pre-processing Framework provides a centralized platform for i
 - [Accessing the Application](#accessing-the-application)
 - [API Endpoints](#api-endpoints)
 - [Event Export](#event-export)
+- [ML-Ready Contract](#ml-ready-contract)
 - [Database Configuration](#database-configuration)
 - [Docker Compose Configuration](#docker-compose-configuration)
 - [Testing the Application](#testing-the-application)
+- [Scalability: Current State and Path](#scalability-current-state-and-path)
+- [Requirement Coverage](#requirement-coverage)
+- [Known Limitations](#known-limitations)
 - [Common Operations](#common-operations)
 - [Troubleshooting](#troubleshooting)
 - [Screenshots](#screenshots)
@@ -467,10 +471,13 @@ GET /events/123
 
 The Reports module allows users to export processed events for external analysis.
 
+JSON, CSV, and NDJSON exports stream rows from the database and are limited to the latest `MAX_EXPORT_RECORDS` rows (100 by default). Set `MAX_EXPORT_RECORDS` to change the limit.
+
 **Supported export formats:**
 
 - CSV Event Export
 - JSON Event Export
+- NDJSON Event Export
 
 ### CSV Export
 
@@ -489,6 +496,17 @@ Useful for:
 - Automation
 - Security tools
 - Further programmatic analysis
+
+---
+
+## ML-Ready Contract
+
+“ML-ready” is backed by concrete artifacts in this project:
+
+- Every universal event carries the fixed, versioned `schema_version` (`1.1.0`), parser and normalizer provenance, detection confidence, and an explicit processing status for accepted, duplicate, and rejected records.
+- `backend/analytics/features.py` produces fixed-width numeric feature columns for source type, severity, action, hour, day of week, and a 24-hour source event count. Features are stored separately in `normalized_event_features`; hourly rollups are updated once per processing batch.
+- The data-lake worker writes bounded Parquet batches for downstream training and analytics workflows.
+- `GET /api/v1/export/ml-dataset` streams the engineered feature rows as newline-delimited JSON, capped by the same configured export limit.
 
 ---
 
@@ -563,7 +581,18 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 
 ## Testing the Application
 
-Sample log files are available inside the `sample_logs/` directory.
+Sample log files are available inside the `sample_logs/` directory. The repository now contains a focused pytest suite under `tests/`, with runtime dependencies in `requirements-dev.txt`.
+
+Run it from `universal-log-framework/`:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q ..\tests
+```
+
+The current observed result is **16 passed, 3 failed, 2 skipped**. The three failures are intentional information about current application behavior: malformed CEF, LEEF, and Key-Value records return an empty list instead of raising or returning an explicit parse error. The two database-backed deduplication tests are skipped unless `TEST_DATABASE_URL` points to a dedicated test database; the fixture refuses to use the live `DATABASE_URL`.
+
+The suite also verifies JSON object, array, and JSON Lines parsing; empty/header-only input; invalid UTF-8 rejection; worker DLQ/retry behavior; the lowercase job-status contract; the frontend-consumed batch job payload; and database uniqueness behavior when a dedicated PostgreSQL test database is provided. It is not a full end-to-end test: no browser flow, production-volume run, or measured throughput run is claimed here.
 
 You can test the application by:
 
@@ -583,6 +612,60 @@ You can test the application by:
 - `.leef`
 - `.log`
 - `.txt`
+
+---
+
+## Scalability: Current State and Path
+
+Implemented today:
+
+- Queue-decoupled ingestion through the Kafka-compatible producer and consumer in `backend/ulpf_queue/`.
+- Consumer-group worker configuration in `backend/ulpf_queue/consumer.py`, allowing multiple worker instances to share partitions.
+- Partitioned Parquet data-lake batches in `backend/datalake/exporter.py`.
+- Built-in and custom plugin parser discovery in `backend/registry/parser_registry.py`.
+
+Current throughput limits:
+
+- A single Kafka partition permits only one active consumer for that partition, regardless of worker count.
+- Processing parses a full uploaded file in memory before normalization.
+- HTTP exports are intentionally bounded by `MAX_EXPORT_RECORDS` and stream at most that configured number of rows.
+- No throughput benchmark has been run, so measured events-per-second and sustained-volume values remain **TODO**.
+
+Concrete path beyond the current limits:
+
+1. Increase topic partitions and validate partition-key distribution before increasing worker replicas.
+2. Add bounded/chunked file parsing and batch-level backpressure rather than loading complete files.
+3. Benchmark ingestion, normalization, queue lag, database writes, Parquet export, and bounded API export separately.
+4. Use those measurements to size database connection pools, batch sizes, consumer concurrency, and lake partitions.
+
+---
+
+## Requirement Coverage
+
+This table records repository evidence, not intended future behavior. “Implemented” means the code path exists; it does not imply production-scale or end-to-end verification.
+
+| Requirement | Status | Evidence |
+|---|---|---|
+| (a) Heterogeneous log ingestion | Implemented | `backend/api/upload.py` accepts single and batch uploads. |
+| (b) Automatic format detection | Implemented | `backend/registry/parser_registry.py` exposes `detect_best_parser`. |
+| (c) JSON, CSV, XML, CEF, LEEF, Syslog, and Key-Value parsers | Partial | Built-ins exist under `backend/parsers/builtin/`, but malformed CEF/LEEF/Key-Value inputs currently fail focused tests by returning empty results. |
+| (d) Common normalized event storage | Implemented | `backend/models/normalized_event.py` and `backend/normalization/service.py` persist normalized records. |
+| (e) Queue-decoupled worker processing | Implemented | `backend/ulpf_queue/producer.py` publishes references and `consumer.py` processes them. |
+| (f) Poison-message DLQ and retry separation | Implemented | `backend/ulpf_queue/consumer.py` separates `PoisonMessageError` from `RETRYABLE_ERRORS`; focused tests pass. |
+| (g) Batch upload job tracking | Implemented | `POST /upload/batch` returns a job payload and `GET /upload/jobs/{job_id}` returns its status. |
+| (h) Fixed-width ML feature persistence | Partial | `backend/analytics/features.py` and `normalized_event_features` exist, but dedicated PostgreSQL tests were skipped without `TEST_DATABASE_URL`. |
+| (i) Parquet data-lake export | Implemented | `backend/datalake/exporter.py` writes partitioned Parquet batches. |
+| (j) Bounded streaming event exports | Implemented | `backend/api/export.py` streams JSON, CSV, NDJSON, and `/api/v1/export/ml-dataset` with `MAX_EXPORT_RECORDS`. |
+| (k) Authentication and production security posture | Designed-not-built | No authentication layer is present; deployment remains a prototype posture. |
+
+---
+
+## Known Limitations
+
+- There is no authentication or authorization layer.
+- Custom plugins are filesystem-only and discovered from the local `backend/parsers/custom/` directory.
+- Docker Compose uses development credentials, including the documented PostgreSQL and MinIO defaults.
+- These limitations mean the current deployment posture is a prototype, not a production security posture.
 
 ---
 
