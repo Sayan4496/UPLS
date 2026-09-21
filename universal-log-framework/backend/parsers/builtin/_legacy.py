@@ -52,8 +52,9 @@ class LegacyParserAdapter(BaseParser):
 
     def parse(self, raw_event: bytes) -> tuple[list[dict[str, Any]], int, list[str]]:
         text = raw_event.decode("utf-8")
+        parser = self._legacy_parser()
         try:
-            events = self._legacy_parser().parse(text)
+            events = parser.parse(text)
         except Exception as error:
             return [], 0, [str(error)]
 
@@ -70,13 +71,15 @@ class LineAwareLegacyAdapter(LegacyParserAdapter):
 
     def parse(self, raw_event: bytes) -> tuple[list[dict[str, Any]], int, list[str]]:
         text = raw_event.decode("utf-8")
+        parser = self._legacy_parser()
         try:
-            events = self._legacy_parser().parse(text)
+            events = parser.parse(text)
         except Exception as error:
             return [], 0, [str(error)]
 
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        skipped_line_count = 0
+        skipped_line_count = getattr(parser, "skipped_line_count", 0)
+        parse_errors = getattr(parser, "parse_errors", [])
         if self.name in {"CEFParser", "LEEFParser"}:
             candidate_lines = [
                 line for line in lines
@@ -88,6 +91,10 @@ class LineAwareLegacyAdapter(LegacyParserAdapter):
                 if not line.startswith("#") and not line.startswith(f"{self.supported_formats[0]}:")
             )
         elif self.name == "KeyValueParser":
-            skipped_line_count = max(len(lines) - len(events), 0)
+            data_lines = [line for line in lines if not line.startswith("#")]
+            skipped_line_count = max(
+                skipped_line_count,
+                len(data_lines) - len(events),
+            )
 
-        return events, skipped_line_count, []
+        return events, skipped_line_count, parse_errors

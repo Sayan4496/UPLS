@@ -11,6 +11,8 @@ class CEFParser(BaseParser):
     def parse(self, raw_content: str):
 
         events = []
+        self.parse_errors = []
+        self.skipped_line_count = 0
 
         lines = raw_content.strip().splitlines()
 
@@ -42,6 +44,10 @@ class CEFParser(BaseParser):
 
 
             if len(parts) < 8:
+                self.skipped_line_count += 1
+                self.parse_errors.append(
+                    f"Malformed CEF line: expected 8 pipe-delimited fields, got {len(parts)}"
+                )
                 continue
 
 

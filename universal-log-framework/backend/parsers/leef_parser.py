@@ -9,6 +9,8 @@ class LEEFParser(BaseParser):
     def parse(self, raw_content: str):
 
         events = []
+        self.parse_errors = []
+        self.skipped_line_count = 0
 
         lines = raw_content.strip().splitlines()
 
@@ -31,6 +33,10 @@ class LEEFParser(BaseParser):
             parts = line.split("|", 5)
 
             if len(parts) < 6:
+                self.skipped_line_count += 1
+                self.parse_errors.append(
+                    f"Malformed LEEF line: expected 6 pipe-delimited fields, got {len(parts)}"
+                )
                 continue
 
             version = parts[0].replace(

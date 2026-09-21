@@ -11,6 +11,8 @@ class KeyValueParser(BaseParser):
     def parse(self, raw_content: str):
 
         events = []
+        self.parse_errors = []
+        self.skipped_line_count = 0
 
 
         lines = raw_content.strip().splitlines()
@@ -22,6 +24,10 @@ class KeyValueParser(BaseParser):
 
 
             if not line:
+
+                continue
+
+            if line.startswith("#"):
 
                 continue
 
@@ -55,10 +61,19 @@ class KeyValueParser(BaseParser):
                 if event:
 
                     events.append(event)
+                else:
+                    self.skipped_line_count += 1
+                    self.parse_errors.append(
+                        "Malformed Key-Value line: no key=value pairs found"
+                    )
 
 
-            except ValueError:
+            except ValueError as error:
 
+                self.skipped_line_count += 1
+                self.parse_errors.append(
+                    f"Malformed Key-Value line: {error}"
+                )
                 continue
 
 
