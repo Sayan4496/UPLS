@@ -98,7 +98,9 @@ def health_check():
                 "quality_metrics",
                 "processing_history",
                 "processing_time",
-                "processing_timestamp"
+                "processing_timestamp",
+                "processing_status",
+                "status_reason"
             }
 
             missing_columns = sorted(

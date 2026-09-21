@@ -49,9 +49,9 @@ function Reports() {
       <div className="page-header"><div><p className="eyebrow">Portable evidence</p><h1>Reports</h1><p>Export the current event store without adding fabricated summaries or estimates.</p></div><span className="data-chip"><RefreshCw size={14} /> API-backed</span></div>
       {status && <div className="success-message">{status}</div>}
       <section className="report-grid">
-        <button className="report-card" onClick={() => exportEvents("csv")} disabled={loading}><span className="report-icon green"><FileSpreadsheet size={24} /></span><span><strong>CSV event export</strong><small>Portable spreadsheet format from the latest 100 events.</small></span><Download size={17} /></button>
-        <button className="report-card" onClick={() => exportEvents("json")} disabled={loading}><span className="report-icon blue"><FileJson size={24} /></span><span><strong>JSON event export</strong><small>Machine-readable normalized event records.</small></span><Download size={17} /></button>
-        <button className="report-card" onClick={() => exportEvents("ndjson")} disabled={loading}><span className="report-icon purple"><FileCode2 size={24} /></span><span><strong>NDJSON event export</strong><small>Line-delimited JSON records from the stored event stream.</small></span><Download size={17} /></button>
+        <button className="report-card" onClick={() => exportEvents("csv")} disabled={loading}><span className="report-icon green"><FileSpreadsheet size={24} /></span><span><strong>CSV event export</strong><small>Portable spreadsheet format, limited to the latest 100 events.</small></span><Download size={17} /></button>
+        <button className="report-card" onClick={() => exportEvents("json")} disabled={loading}><span className="report-icon blue"><FileJson size={24} /></span><span><strong>JSON event export</strong><small>Machine-readable normalized records, limited to the latest 100 events.</small></span><Download size={17} /></button>
+        <button className="report-card" onClick={() => exportEvents("ndjson")} disabled={loading}><span className="report-icon purple"><FileCode2 size={24} /></span><span><strong>NDJSON event export</strong><small>Line-delimited records, limited to the latest 100 events.</small></span><Download size={17} /></button>
       </section>
     </div>
   );

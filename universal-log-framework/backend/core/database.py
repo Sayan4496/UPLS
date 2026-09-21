@@ -58,10 +58,80 @@ def ensure_database_schema():
         connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS event_hash VARCHAR(64)"))
         connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS duplicate_of UUID"))
         connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN NOT NULL DEFAULT FALSE"))
+        connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS processing_status VARCHAR(20) NOT NULL DEFAULT 'RECEIVED'"))
+        connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS status_reason TEXT"))
+        connection.execute(text("ALTER TABLE raw_events ADD COLUMN IF NOT EXISTS universal_event JSONB"))
 
         connection.execute(text("ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS duplicate_of UUID"))
         connection.execute(text("ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS is_duplicate BOOLEAN NOT NULL DEFAULT FALSE"))
+        connection.execute(text("ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS processing_status VARCHAR(20) NOT NULL DEFAULT 'ACCEPTED'"))
+        connection.execute(text("ALTER TABLE normalized_events ADD COLUMN IF NOT EXISTS status_reason TEXT"))
         connection.execute(text("CREATE INDEX IF NOT EXISTS idx_normalized_events_normalized_at_id ON normalized_events (normalized_at, id)"))
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS feature_source_rollups (
+                source_type VARCHAR(50) NOT NULL,
+                window_start TIMESTAMPTZ NOT NULL,
+                event_count INTEGER NOT NULL,
+                PRIMARY KEY (source_type, window_start)
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE IF NOT EXISTS normalized_event_features (
+                event_id UUID PRIMARY KEY REFERENCES normalized_events(id) ON DELETE CASCADE,
+                feature_schema_version VARCHAR(20) NOT NULL DEFAULT '1.0.0',
+                source_type VARCHAR(50) NOT NULL,
+                source_type_code INTEGER NOT NULL,
+                severity_code INTEGER NOT NULL,
+                action_code INTEGER NOT NULL,
+                event_hour INTEGER NOT NULL,
+                event_day_of_week INTEGER NOT NULL,
+                source_event_count_24h INTEGER NOT NULL,
+                generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+        """))
+        # Upgrade the Phase 7 table in place. Existing deployments may have
+        # the legacy feature columns from an earlier initializer.
+        connection.execute(text(
+            "ALTER TABLE normalized_event_features "
+            "ADD COLUMN IF NOT EXISTS source_type VARCHAR(50) NOT NULL DEFAULT 'UNKNOWN'"
+        ))
+        connection.execute(text(
+            "ALTER TABLE normalized_event_features "
+            "ADD COLUMN IF NOT EXISTS source_event_count_24h INTEGER NOT NULL DEFAULT 0"
+        ))
+        connection.execute(text(
+            "ALTER TABLE normalized_event_features "
+            "ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ NOT NULL DEFAULT now()"
+        ))
+        connection.execute(text("""
+            UPDATE normalized_event_features AS features
+            SET source_type = COALESCE(events.source_format, 'UNKNOWN')
+            FROM normalized_events AS events
+            WHERE events.id = features.event_id
+        """))
+        connection.execute(text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = 'normalized_event_features'
+                      AND column_name = 'rolling_source_event_count'
+                ) THEN
+                    EXECUTE 'UPDATE normalized_event_features
+                             SET source_event_count_24h = COALESCE(
+                                 NULLIF(rolling_source_event_count, 0),
+                                 NULLIF(source_event_count_1h, 0),
+                                 0
+                             )';
+                END IF;
+            END $$;
+        """))
+        connection.execute(text(
+            "ALTER TABLE normalized_event_features "
+            "ALTER COLUMN feature_schema_version SET DEFAULT '1.0.0'"
+        ))
         connection.execute(text("""
             CREATE TABLE IF NOT EXISTS datalake_export_state (
                 id INTEGER PRIMARY KEY CHECK (id = 1),

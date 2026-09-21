@@ -58,6 +58,10 @@ class NormalizedEvent(Base):
         default=False
     )
 
+    processing_status = Column(String(20), nullable=False, default="ACCEPTED")
+
+    status_reason = Column(Text, nullable=True)
+
     parsed_log = Column(
         JSONB,
         nullable=False

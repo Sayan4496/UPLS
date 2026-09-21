@@ -2,14 +2,17 @@ import csv
 import io
 import json
 from datetime import datetime, timedelta
+from typing import Iterator
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy import String, or_
 from sqlalchemy.orm import Session
 
+from core.config import EXPORT_FETCH_BATCH_SIZE, MAX_EXPORT_RECORDS
 from core.database import SessionLocal
 from models.normalized_event import NormalizedEvent
+from models.normalized_event_features import NormalizedEventFeatures
 from models.raw_event import RawEvent
 from datalake.exporter import DataLakeExporter
 
@@ -50,6 +53,7 @@ def _build_universal_event(event):
         return event.universal_event
 
     return {
+        "schema_version": "1.1.0",
         "event": {
             "id": event.event_hash,
             "timestamp": _serialize_value(event.event_timestamp),
@@ -92,7 +96,15 @@ def _build_universal_event(event):
         "message": event.message,
         "raw": {
             "original_event": event.parsed_log
-        }
+        },
+        "provenance": {
+            "parser": {"name": event.parser_used, "version": event.parser_version},
+            "normalizer": {"name": "LogNormalizer", "version": event.normalization_version},
+            "detection_confidence": event.parser_confidence,
+        },
+        "processing_status": event.processing_status,
+        "duplicate": {"is_duplicate": bool(event.is_duplicate), "duplicate_of": str(event.duplicate_of) if event.duplicate_of else None},
+        "rejection": {"is_rejected": event.processing_status == "REJECTED", "reason": event.status_reason},
     }
 
 
@@ -116,6 +128,8 @@ def _build_export_record(event, raw_event):
         "event_hash": event.event_hash,
         "duplicate_of": str(event.duplicate_of) if event.duplicate_of else None,
         "is_duplicate": bool(event.is_duplicate),
+        "processing_status": event.processing_status,
+        "status_reason": event.status_reason,
         "raw_log": raw_event.raw_content if raw_event else None,
         "parsed_data": event.parsed_log,
         "normalized_data": event.normalized_log,
@@ -150,7 +164,10 @@ def _get_export_query(
     date_from: str | None = None,
     date_to: str | None = None
 ):
-    query = db.query(NormalizedEvent)
+    query = db.query(NormalizedEvent, RawEvent).outerjoin(
+        RawEvent,
+        RawEvent.id == NormalizedEvent.raw_event_id,
+    )
 
     if severity:
         query = query.filter(NormalizedEvent.severity == severity)
@@ -198,52 +215,69 @@ def _get_export_query(
             )
         )
 
-    return (
-        query
-        .order_by(
-            NormalizedEvent.event_timestamp.desc().nulls_last(),
-            NormalizedEvent.normalized_at.desc(),
-            NormalizedEvent.id.desc()
-        )
-        .all()
+    return query.order_by(
+        NormalizedEvent.event_timestamp.desc().nulls_last(),
+        NormalizedEvent.normalized_at.desc(),
+        NormalizedEvent.id.desc(),
     )
 
 
-def _load_export_records(
-    db: Session,
-    severity: str | None = None,
-    source_format: str | None = None,
-    event_type: str | None = None,
-    search: str | None = None,
-    host: str | None = None,
-    parser: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
-):
-    events = _get_export_query(
-        db=db,
-        severity=severity,
-        source_format=source_format,
-        event_type=event_type,
-        search=search,
-        host=host,
-        parser=parser,
-        date_from=date_from,
-        date_to=date_to
-    )
+def _iter_export_records(db: Session, **filters) -> Iterator[dict]:
+    query = _get_export_query(db=db, **filters).limit(MAX_EXPORT_RECORDS)
+    for event, raw_event in query.execution_options(stream_results=True).yield_per(EXPORT_FETCH_BATCH_SIZE):
+        yield _build_export_record(event, raw_event)
 
-    raw_events = (
-        db.query(RawEvent)
-        .filter(RawEvent.id.in_([event.raw_event_id for event in events]))
-        .all()
-    )
 
-    raw_lookup = {raw_event.id: raw_event for raw_event in raw_events}
+def _stream_json(records: Iterator[dict]):
+    yield "["
+    first = True
+    for record in records:
+        if not first:
+            yield ","
+        yield json.dumps(record, default=str)
+        first = False
+    yield "]"
 
-    return [
-        _build_export_record(event, raw_lookup.get(event.raw_event_id))
-        for event in events
-    ]
+
+EXPORT_FIELDS = [
+    "id", "raw_event_id", "upload_id", "event_hash", "duplicate_of", "is_duplicate",
+    "processing_status", "status_reason", "event_timestamp", "source_ip", "destination_ip",
+    "source_port", "destination_port", "severity", "event_type", "action", "device_type",
+    "vendor", "message", "parser_used", "source_format", "parser_confidence", "fallback_used",
+    "processing_timestamp", "universal_event",
+]
+
+
+def _csv_row(record):
+    return {
+        "id": record["id"], "raw_event_id": record["raw_event_id"], "upload_id": record["upload_id"],
+        "event_hash": record["event_hash"], "duplicate_of": record.get("duplicate_of"),
+        "is_duplicate": record.get("is_duplicate"), "processing_status": record.get("processing_status"),
+        "status_reason": record.get("status_reason"), "event_timestamp": record["event"]["event_timestamp"],
+        "source_ip": record["event"]["source_ip"], "destination_ip": record["event"]["destination_ip"],
+        "source_port": record["event"]["source_port"], "destination_port": record["event"]["destination_port"],
+        "severity": record["event"]["severity"], "event_type": record["event"]["event_type"],
+        "action": record["event"]["action"], "device_type": record["event"]["device_type"],
+        "vendor": record["event"]["vendor"], "message": record["event"]["message"],
+        "parser_used": record["parser_information"]["parser_used"],
+        "source_format": record["parser_information"]["source_format"],
+        "parser_confidence": record["parser_information"]["parser_confidence"],
+        "fallback_used": record["parser_information"]["fallback_used"],
+        "processing_timestamp": record["parser_information"]["processing_timestamp"],
+        "universal_event": json.dumps(record["universal_event"], default=str),
+    }
+
+
+def _stream_csv(records: Iterator[dict]):
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=EXPORT_FIELDS)
+    writer.writeheader()
+    yield buffer.getvalue()
+    for record in records:
+        buffer.seek(0)
+        buffer.truncate(0)
+        writer.writerow(_csv_row(record))
+        yield buffer.getvalue()
 
 
 @router.get("/json")
@@ -258,19 +292,13 @@ def export_json(
     date_to: str | None = Query(default=None),
     db: Session = Depends(get_db)
 ):
-    records = _load_export_records(
-        db=db,
-        severity=severity,
-        source_format=source_format,
-        event_type=event_type,
-        search=search,
-        host=host,
-        parser=parser,
-        date_from=date_from,
-        date_to=date_to
+    return StreamingResponse(
+        _stream_json(_iter_export_records(
+            db, severity=severity, source_format=source_format, event_type=event_type,
+            search=search, host=host, parser=parser, date_from=date_from, date_to=date_to,
+        )),
+        media_type="application/json",
     )
-
-    return JSONResponse(content=records)
 
 
 @router.get("/csv")
@@ -285,80 +313,12 @@ def export_csv(
     date_to: str | None = Query(default=None),
     db: Session = Depends(get_db)
 ):
-    records = _load_export_records(
-        db=db,
-        severity=severity,
-        source_format=source_format,
-        event_type=event_type,
-        search=search,
-        host=host,
-        parser=parser,
-        date_from=date_from,
-        date_to=date_to
-    )
-
-    fieldnames = [
-        "id",
-        "raw_event_id",
-        "upload_id",
-        "event_hash",
-        "duplicate_of",
-        "is_duplicate",
-        "event_timestamp",
-        "source_ip",
-        "destination_ip",
-        "source_port",
-        "destination_port",
-        "severity",
-        "event_type",
-        "action",
-        "device_type",
-        "vendor",
-        "message",
-        "parser_used",
-        "source_format",
-        "parser_confidence",
-        "fallback_used",
-        "processing_timestamp",
-        "universal_event"
-    ]
-
-    buffer = io.StringIO()
-    writer = csv.DictWriter(buffer, fieldnames=fieldnames)
-    writer.writeheader()
-
-    for record in records:
-        row = {
-            "id": record["id"],
-            "raw_event_id": record["raw_event_id"],
-            "upload_id": record["upload_id"],
-            "event_hash": record["event_hash"],
-            "duplicate_of": record.get("duplicate_of"),
-            "is_duplicate": record.get("is_duplicate"),
-            "event_timestamp": record["event"]["event_timestamp"],
-            "source_ip": record["event"]["source_ip"],
-            "destination_ip": record["event"]["destination_ip"],
-            "source_port": record["event"]["source_port"],
-            "destination_port": record["event"]["destination_port"],
-            "severity": record["event"]["severity"],
-            "event_type": record["event"]["event_type"],
-            "action": record["event"]["action"],
-            "device_type": record["event"]["device_type"],
-            "vendor": record["event"]["vendor"],
-            "message": record["event"]["message"],
-            "parser_used": record["parser_information"]["parser_used"],
-            "source_format": record["parser_information"]["source_format"],
-            "parser_confidence": record["parser_information"]["parser_confidence"],
-            "fallback_used": record["parser_information"]["fallback_used"],
-            "processing_timestamp": record["parser_information"]["processing_timestamp"],
-            "universal_event": json.dumps(record["universal_event"], default=str)
-        }
-
-        writer.writerow(row)
-
-    return PlainTextResponse(
-        buffer.getvalue(),
-        media_type="text/csv; charset=utf-8"
+    return StreamingResponse(
+        _stream_csv(_iter_export_records(
+            db, severity=severity, source_format=source_format, event_type=event_type,
+            search=search, host=host, parser=parser, date_from=date_from, date_to=date_to,
+        )),
+        media_type="text/csv; charset=utf-8",
     )
 
 
@@ -374,27 +334,39 @@ def export_ndjson(
     date_to: str | None = Query(default=None),
     db: Session = Depends(get_db)
 ):
-    records = _load_export_records(
-        db=db,
-        severity=severity,
-        source_format=source_format,
-        event_type=event_type,
-        search=search,
-        host=host,
-        parser=parser,
-        date_from=date_from,
-        date_to=date_to
+    def rows():
+        for record in _iter_export_records(
+            db, severity=severity, source_format=source_format, event_type=event_type,
+            search=search, host=host, parser=parser, date_from=date_from, date_to=date_to,
+        ):
+            yield json.dumps(record, default=str) + "\n"
+
+    return StreamingResponse(
+        rows(),
+        media_type="application/x-ndjson; charset=utf-8",
     )
 
-    payload = "\n".join(
-        json.dumps(record, default=str)
-        for record in records
-    )
 
-    if payload:
-        payload += "\n"
+@router.get("/ml-dataset")
+def export_ml_dataset(db: Session = Depends(get_db)):
+    def rows():
+        query = (
+            db.query(NormalizedEventFeatures)
+            .join(NormalizedEvent, NormalizedEvent.id == NormalizedEventFeatures.event_id)
+            .order_by(NormalizedEvent.event_timestamp.desc(), NormalizedEvent.id.desc())
+            .limit(MAX_EXPORT_RECORDS)
+        )
+        for feature in query.execution_options(stream_results=True).yield_per(EXPORT_FETCH_BATCH_SIZE):
+            yield json.dumps({
+                "event_id": str(feature.event_id),
+                "feature_schema_version": feature.feature_schema_version,
+                "source_type": feature.source_type,
+                "source_type_code": feature.source_type_code,
+                "severity_code": feature.severity_code,
+                "action_code": feature.action_code,
+                "event_hour": feature.event_hour,
+                "event_day_of_week": feature.event_day_of_week,
+                "source_event_count_24h": feature.source_event_count_24h,
+            }) + "\n"
 
-    return PlainTextResponse(
-        payload,
-        media_type="application/x-ndjson; charset=utf-8"
-    )
+    return StreamingResponse(rows(), media_type="application/x-ndjson; charset=utf-8")

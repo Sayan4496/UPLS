@@ -8,7 +8,12 @@ from dataclasses import asdict
 from registry.parser_registry import detect_best_parser
 
 from normalization.normalizer import LogNormalizer
+from normalization.schema import (
+    UNIVERSAL_EVENT_SCHEMA_VERSION,
+    validate_universal_event,
+)
 from normalization.service import save_normalized_event
+from analytics.features import persist_feature_batch
 
 from models.raw_event import RawEvent
 from models.normalized_event import NormalizedEvent
@@ -25,6 +30,53 @@ class ProcessingService:
 
     PERSISTENCE_BATCH_SIZE = 500
     logger = logging.getLogger("ulpf-processing")
+
+    @staticmethod
+    def _build_status_event(
+        event_hash,
+        processing_timestamp,
+        file_format,
+        parser_used,
+        parser_version,
+        normalization_version,
+        parser_confidence,
+        status,
+        duplicate_of=None,
+        reason=None,
+        original_event=None,
+    ):
+        return validate_universal_event({
+            "schema_version": UNIVERSAL_EVENT_SCHEMA_VERSION,
+            "event": {
+                "id": event_hash,
+                "timestamp": None,
+                "received_at": processing_timestamp.isoformat(),
+                "type": None,
+                "category": None,
+                "action": None,
+                "severity": None,
+            },
+            "source": {"ip": None, "port": None, "hostname": None, "device_type": None, "vendor": None, "product": None},
+            "destination": {"ip": None, "port": None, "hostname": None},
+            "network": {"protocol": None, "application_protocol": None},
+            "user": {"name": None, "id": None},
+            "process": {"name": None, "pid": None},
+            "log": {
+                "source_format": file_format,
+                "parser_used": parser_used,
+                "parser_confidence": parser_confidence,
+            },
+            "message": None,
+            "raw": {"original_event": original_event},
+            "provenance": {
+                "parser": {"name": parser_used, "version": parser_version},
+                "normalizer": {"name": "LogNormalizer", "version": normalization_version},
+                "detection_confidence": parser_confidence,
+            },
+            "processing_status": status,
+            "duplicate": {"is_duplicate": status == "DUPLICATE", "duplicate_of": duplicate_of},
+            "rejection": {"is_rejected": status == "REJECTED", "reason": reason},
+        })
 
     def _build_quality_metrics(self, parsed_event, normalized_log, parser_confidence, fallback_used):
 
@@ -183,6 +235,14 @@ class ProcessingService:
         }
 
         events_since_commit = 0
+        feature_event_ids = []
+
+        def commit_batch():
+            nonlocal events_since_commit
+            persist_feature_batch(db, feature_event_ids)
+            db.commit()
+            events_since_commit = 0
+            feature_event_ids.clear()
 
         for event in parsed_events:
 
@@ -248,7 +308,8 @@ class ProcessingService:
                 is_duplicate=is_duplicate,
                 raw_log=raw_content,
                 original_format=file_format,
-                checksum=checksum
+                checksum=checksum,
+                processing_status="RECEIVED"
 
             )
 
@@ -265,9 +326,23 @@ class ProcessingService:
 
             if is_duplicate:
                 quality_summary["duplicate_events"] += 1
+                raw_event.processing_status = "DUPLICATE"
+                raw_event.status_reason = "event_hash already exists"
+                raw_event.universal_event = self._build_status_event(
+                    event_hash=event_hash,
+                    processing_timestamp=datetime.now(timezone.utc),
+                    file_format=file_format,
+                    parser_used=parser_used,
+                    parser_version=parser_version,
+                    normalization_version=normalization_version,
+                    parser_confidence=parser_confidence,
+                    status="DUPLICATE",
+                    duplicate_of=str(existing_event.id) if existing_event else None,
+                    reason=raw_event.status_reason,
+                    original_event=event,
+                )
                 if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
-                    db.commit()
-                    events_since_commit = 0
+                    commit_batch()
                 continue
 
 
@@ -275,8 +350,28 @@ class ProcessingService:
             # Normalize event
             # --------------------------------
 
-            event = parser.normalize(event)
-            normalized_data = normalizer.normalize(event)
+            try:
+                event = parser.normalize(event)
+                normalized_data = normalizer.normalize(event)
+            except Exception as error:
+                raw_event.processing_status = "REJECTED"
+                raw_event.status_reason = str(error)
+                raw_event.universal_event = self._build_status_event(
+                    event_hash=event_hash,
+                    processing_timestamp=datetime.now(timezone.utc),
+                    file_format=file_format,
+                    parser_used=parser_used,
+                    parser_version=parser_version,
+                    normalization_version=normalization_version,
+                    parser_confidence=parser_confidence,
+                    status="REJECTED",
+                    reason=raw_event.status_reason,
+                    original_event=event,
+                )
+                quality_summary["failed"] += 1
+                if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
+                    commit_batch()
+                continue
 
             normalized_log = asdict(normalized_data)
 
@@ -289,6 +384,7 @@ class ProcessingService:
             )
 
             universal_event = {
+                "schema_version": UNIVERSAL_EVENT_SCHEMA_VERSION,
                 "event": {
                     "id": event_hash,
                     "timestamp": normalized_log.get("event_timestamp"),
@@ -340,8 +436,19 @@ class ProcessingService:
                 "message": normalized_log.get("message"),
                 "raw": {
                     "original_event": event
-                }
+                },
+                "provenance": {
+                    "parser": {"name": parser_used, "version": parser_version},
+                    "normalizer": {"name": "LogNormalizer", "version": normalization_version},
+                    "detection_confidence": parser_confidence,
+                },
+                "processing_status": "ACCEPTED",
+                "duplicate": {"is_duplicate": False, "duplicate_of": None},
+                "rejection": {"is_rejected": False, "reason": None},
             }
+            validate_universal_event(universal_event)
+            raw_event.processing_status = "ACCEPTED"
+            raw_event.universal_event = universal_event
 
             quality_metrics = self._build_quality_metrics(
                 parsed_event=event,
@@ -417,7 +524,8 @@ class ProcessingService:
                 ),
                 processing_timestamp=processing_timestamp,
                 duplicate_of=duplicate_of,
-                is_duplicate=is_duplicate
+                is_duplicate=is_duplicate,
+                processing_status="ACCEPTED"
 
             )
 
@@ -434,6 +542,21 @@ class ProcessingService:
                 )
                 raw_event.duplicate_of = original_raw_event.id
                 raw_event.is_duplicate = True
+                raw_event.processing_status = "DUPLICATE"
+                raw_event.status_reason = "event_hash conflict during persistence"
+                raw_event.universal_event = self._build_status_event(
+                    event_hash=event_hash,
+                    processing_timestamp=processing_timestamp,
+                    file_format=file_format,
+                    parser_used=parser_used,
+                    parser_version=parser_version,
+                    normalization_version=normalization_version,
+                    parser_confidence=parser_confidence,
+                    status="DUPLICATE",
+                    duplicate_of=str(existing_event.id),
+                    reason=raw_event.status_reason,
+                    original_event=event,
+                )
                 quality_summary["duplicate_events"] += 1
                 if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
                     db.commit()
@@ -442,6 +565,7 @@ class ProcessingService:
 
 
             normalized_events_created += 1
+            feature_event_ids.append(normalized_event_id)
             quality_summary["records_normalized"] += 1
             quality_summary["fallback_used"] += int(fallback_used)
             quality_summary["failed"] += int(quality_metrics["normalization_status"] != "SUCCESS")
@@ -455,12 +579,11 @@ class ProcessingService:
             )
 
             if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
-                db.commit()
-                events_since_commit = 0
+                commit_batch()
 
 
         if events_since_commit:
-            db.commit()
+            commit_batch()
 
 
         # --------------------------------

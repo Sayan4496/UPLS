@@ -23,7 +23,9 @@ def save_normalized_event(
     processing_time,
     processing_timestamp,
     duplicate_of=None,
-    is_duplicate=False
+    is_duplicate=False,
+    processing_status="ACCEPTED",
+    status_reason=None
 ):
 
     statement = insert(NormalizedEvent).values(
@@ -32,6 +34,8 @@ def save_normalized_event(
         event_hash=event_hash,
         duplicate_of=duplicate_of,
         is_duplicate=is_duplicate,
+        processing_status=processing_status,
+        status_reason=status_reason,
         parsed_log=parsed_log,
         normalized_log=normalized_log,
         universal_event=universal_event,

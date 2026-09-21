@@ -56,6 +56,9 @@ CREATE TABLE IF NOT EXISTS raw_events (
     event_hash       VARCHAR(64),
     duplicate_of     UUID NULL REFERENCES raw_events(id) ON DELETE SET NULL,
     is_duplicate     BOOLEAN NOT NULL DEFAULT FALSE,
+    processing_status VARCHAR(20) NOT NULL DEFAULT 'RECEIVED',
+    status_reason     TEXT,
+    universal_event   JSONB,
     raw_content      TEXT NOT NULL,
     original_format  VARCHAR(20) NOT NULL,   -- JSON, SYSLOG, CSV, KEY-VALUE, CEF, NETFLOW, UNKNOWN
     checksum         VARCHAR(64) NOT NULL,   -- SHA-256 hex digest of raw_content
@@ -77,6 +80,8 @@ CREATE TABLE IF NOT EXISTS normalized_events (
     event_hash           VARCHAR(64) NOT NULL UNIQUE,
     duplicate_of         UUID NULL REFERENCES normalized_events(id) ON DELETE SET NULL,
     is_duplicate         BOOLEAN NOT NULL DEFAULT FALSE,
+    processing_status     VARCHAR(20) NOT NULL DEFAULT 'ACCEPTED',
+    status_reason         TEXT,
     parsed_log           JSONB NOT NULL,
     normalized_log       JSONB NOT NULL,
     universal_event      JSONB,
@@ -118,6 +123,26 @@ CREATE INDEX IF NOT EXISTS idx_normalized_events_severity ON normalized_events (
 CREATE INDEX IF NOT EXISTS idx_normalized_events_device_type ON normalized_events (device_type);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_vendor ON normalized_events (vendor);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_normalized_at_id ON normalized_events (normalized_at, id);
+
+CREATE TABLE IF NOT EXISTS feature_source_rollups (
+    source_type  VARCHAR(50) NOT NULL,
+    window_start TIMESTAMPTZ NOT NULL,
+    event_count  INTEGER NOT NULL,
+    PRIMARY KEY (source_type, window_start)
+);
+
+CREATE TABLE IF NOT EXISTS normalized_event_features (
+    event_id               UUID PRIMARY KEY REFERENCES normalized_events(id) ON DELETE CASCADE,
+    feature_schema_version VARCHAR(20) NOT NULL DEFAULT '1.0.0',
+    source_type            VARCHAR(50) NOT NULL,
+    source_type_code       INTEGER NOT NULL,
+    severity_code          INTEGER NOT NULL,
+    action_code            INTEGER NOT NULL,
+    event_hour             INTEGER NOT NULL,
+    event_day_of_week      INTEGER NOT NULL,
+    source_event_count_24h INTEGER NOT NULL,
+    generated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 CREATE TABLE IF NOT EXISTS datalake_export_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),

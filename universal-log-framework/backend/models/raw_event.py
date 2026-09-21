@@ -2,7 +2,7 @@ import uuid
 
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import synonym
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 
 from core.database import Base
@@ -41,6 +41,12 @@ class RawEvent(Base):
         nullable=False,
         default=False
     )
+
+    processing_status = Column(String(20), nullable=False, default="RECEIVED")
+
+    status_reason = Column(Text, nullable=True)
+
+    universal_event = Column(JSONB, nullable=True)
 
     raw_log = Column(
         "raw_content",
