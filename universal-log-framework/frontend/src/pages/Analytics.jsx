@@ -16,7 +16,7 @@ import {
 } from "recharts";
 
 import StatCard from "../components/StatCard";
-import { getAnalyticsDashboard, getParserCoverage } from "../services/api";
+import { exportMlDataset, getAnalyticsDashboard, getParserCoverage } from "../services/api";
 
 const severityColors = {
   INFO: "#60a5fa",
@@ -61,20 +61,29 @@ function Analytics() {
   const [parserCoverage, setParserCoverage] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [featureRows, setFeatureRows] = useState([]);
 
   const loadAnalytics = async () => {
     try {
       setLoading(true);
       setError("");
-      const [dashboardData, parserData] = await Promise.all([
+      const [dashboardResult, parserResult, featureResult] = await Promise.allSettled([
         getAnalyticsDashboard(),
-        getParserCoverage()
+        getParserCoverage(),
+        exportMlDataset()
       ]);
-      setDashboard(dashboardData);
-      setParserCoverage(parserData);
+      if (dashboardResult.status === "fulfilled") setDashboard(dashboardResult.value);
+      if (parserResult.status === "fulfilled") setParserCoverage(parserResult.value);
+      if (featureResult.status === "fulfilled") {
+        const text = await featureResult.value.data.text();
+        setFeatureRows(text.split("\n").filter(Boolean).slice(0, 5).map((row) => JSON.parse(row)));
+      } else {
+        setFeatureRows([]);
+      }
     } catch {
       setDashboard(null);
       setParserCoverage(null);
+      setFeatureRows([]);
       setError("Analytics are unavailable until the events API responds.");
     } finally {
       setLoading(false);
@@ -142,6 +151,11 @@ function Analytics() {
         <div className="chart-wrap chart-wrap-error">
           {volume.length ? <ResponsiveContainer width="100%" height="100%"><LineChart data={volume}><CartesianGrid stroke="rgba(145,173,205,.12)" vertical={false} /><XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis unit="%" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={42} /><Tooltip contentStyle={{ background: "#142235", border: "1px solid #2d4460", borderRadius: 8, color: "#e5e7eb" }} labelFormatter={formatDate} formatter={(value) => [`${value}%`, "error rate"]} /><Line type="monotone" dataKey="error_rate" stroke="#fb7185" strokeWidth={2.5} dot={{ fill: "#fb7185", r: 3 }} activeDot={{ r: 5 }} /></LineChart></ResponsiveContainer> : <div className="chart-empty">No error-rate data yet.</div>}
         </div>
+      </section>
+
+      <section className="panel analytics-feature-panel">
+        <div className="panel-header"><div><p className="eyebrow">ML feature layer</p><h2>Feature vector sample</h2></div><span className="data-chip">{featureRows.length ? `${featureRows.length} sampled` : "No data"}</span></div>
+        {featureRows.length ? <div className="feature-table-wrap"><table className="feature-table"><thead><tr><th>Source</th><th>Severity</th><th>Action</th><th>Hour</th><th>Day</th><th>24h source count</th></tr></thead><tbody>{featureRows.map((row) => <tr key={row.event_id}><td>{row.source_type}</td><td>{row.severity_code}</td><td>{row.action_code}</td><td>{row.event_hour}</td><td>{row.event_day_of_week}</td><td>{row.source_event_count_24h}</td></tr>)}</tbody></table></div> : <div className="chart-empty">No feature rows were returned by the ML dataset endpoint.</div>}
       </section>
     </div>
   );

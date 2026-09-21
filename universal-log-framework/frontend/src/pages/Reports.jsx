@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Download, FileCode2, FileJson, FileSpreadsheet, RefreshCw } from "lucide-react";
+import { BrainCircuit, Download, FileCode2, FileJson, FileSpreadsheet, RefreshCw } from "lucide-react";
 
-import { exportEventsData } from "../services/api";
+import { exportEventsData, exportMlDataset } from "../services/api";
 
 function downloadFile(content, filename, type) {
   const blob = new Blob([content], { type });
@@ -21,7 +21,7 @@ function Reports() {
       setLoading(true);
       setStatus("");
 
-      const response = await exportEventsData(format);
+      const response = format === "ml-dataset" ? await exportMlDataset() : await exportEventsData(format);
       const contentType = response.headers["content-type"] || "application/octet-stream";
       const blob = response.data;
 
@@ -31,7 +31,7 @@ function Reports() {
       }
 
       const extension = format === "json" ? "json" : format === "csv" ? "csv" : "ndjson";
-      const fileName = `ulps-events.${extension}`;
+      const fileName = format === "ml-dataset" ? "ulps-ml-dataset.ndjson" : `ulps-events.${extension}`;
       const responseType = contentType.includes("json") ? "application/json" : contentType.includes("csv") ? "text/csv" : "application/x-ndjson";
 
       downloadFile(blob, fileName, responseType);
@@ -52,6 +52,7 @@ function Reports() {
         <button className="report-card" onClick={() => exportEvents("csv")} disabled={loading}><span className="report-icon green"><FileSpreadsheet size={24} /></span><span><strong>CSV event export</strong><small>Portable spreadsheet format, limited to the latest 100 events.</small></span><Download size={17} /></button>
         <button className="report-card" onClick={() => exportEvents("json")} disabled={loading}><span className="report-icon blue"><FileJson size={24} /></span><span><strong>JSON event export</strong><small>Machine-readable normalized records, limited to the latest 100 events.</small></span><Download size={17} /></button>
         <button className="report-card" onClick={() => exportEvents("ndjson")} disabled={loading}><span className="report-icon purple"><FileCode2 size={24} /></span><span><strong>NDJSON event export</strong><small>Line-delimited records, limited to the latest 100 events.</small></span><Download size={17} /></button>
+        <button className="report-card" onClick={() => exportEvents("ml-dataset")} disabled={loading}><span className="report-icon purple"><BrainCircuit size={24} /></span><span><strong>ML dataset export</strong><small>Engineered feature vectors from the backend feature store.</small></span><Download size={17} /></button>
       </section>
     </div>
   );

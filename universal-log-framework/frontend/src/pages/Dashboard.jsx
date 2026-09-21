@@ -3,25 +3,28 @@ import { Activity, ArrowUpRight, Ban, Clock3, Database, ShieldAlert, UploadCloud
 
 import EventsTable from "../components/EventsTable";
 import StatCard from "../components/StatCard";
-import { checkBackendHealth, getDashboardData } from "../services/api";
+import { checkBackendHealth, getDashboardData, getParserCoverage } from "../services/api";
 
 const emptyData = { totalEvents: 0, highSeverity: 0, blockedEvents: 0, activeSources: 0, events: [] };
 
 function Dashboard() {
   const [data, setData] = useState(emptyData);
   const [status, setStatus] = useState({ loading: true, connected: false, error: "" });
+  const [parserCoverage, setParserCoverage] = useState(null);
 
   const loadDashboard = async () => {
     setStatus({ loading: true, connected: false, error: "" });
 
     try {
-      const [dashboardResult, healthResult] = await Promise.allSettled([
+      const [dashboardResult, healthResult, coverageResult] = await Promise.allSettled([
         getDashboardData(),
-        checkBackendHealth()
+        checkBackendHealth(),
+        getParserCoverage()
       ]);
 
       const dashboard = dashboardResult.status === "fulfilled" ? dashboardResult.value : emptyData;
       const health = healthResult.status === "fulfilled" ? healthResult.value : { connected: false, data: null };
+      setParserCoverage(coverageResult.status === "fulfilled" ? coverageResult.value : null);
       const connected = Boolean(health.connected) || Boolean((dashboard.events || []).length) || Boolean(dashboard.totalEvents);
 
       setData(dashboard);
@@ -82,6 +85,7 @@ function Dashboard() {
             <a className="action-tile" href="/upload"><span className="action-icon blue"><UploadCloud size={19} /></span><span><strong>Upload logs</strong><small>Process one or multiple files</small></span><ArrowUpRight size={16} /></a>
             <a className="action-tile" href="/events"><span className="action-icon amber"><Clock3 size={19} /></span><span><strong>Review events</strong><small>Filter the live event store</small></span><ArrowUpRight size={16} /></a>
           </div>
+          {parserCoverage?.coverage?.length > 0 && <div className="panel dashboard-parser-panel"><div className="panel-header"><div><p className="eyebrow">Parser coverage</p><h2>{parserCoverage.total_events?.toLocaleString() || 0} normalized events</h2></div></div><div className="coverage-list">{parserCoverage.coverage.slice(0, 3).map((row) => <div className="coverage-row" key={`${row.parser_used}-${row.source_format}`}><div className="coverage-label"><strong>{row.source_format}</strong><span>{row.percentage}%</span></div><div className="severity-track"><span style={{ width: `${row.percentage}%`, background: row.fallback_used ? "#fbbf24" : "#60a5fa" }} /></div></div>)}</div></div>}
           <div className={`panel health-panel ${status.connected ? "is-healthy" : "is-offline"}`}>
             <div className="health-orbit"><span></span><Database size={25} /></div>
             <div><p className="eyebrow">Backend status</p><h2>{status.connected ? "Connected" : status.loading ? "Checking..." : "Offline"}</h2><p>{status.connected ? "API and database health checks are responding." : "No live health response is available."}</p></div>

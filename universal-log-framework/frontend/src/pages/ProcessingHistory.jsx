@@ -42,7 +42,7 @@ function ProcessingHistory() {
           <td>{detail.file || `${detail.format || "Unknown"} record batch`}</td>
           <td>{detail.format}</td>
           <td>{numberValue(detail.records)}</td>
-          <td>{numberValue(detail.success ?? detail.normalized)}</td>
+          <td>{numberValue(detail.success ?? detail.normalized ?? job.processed_records)}</td>
           <td>{numberValue(detail.failed)}</td>
           <td><span className={`job-status ${statusValue(detail.status, job.status).toLowerCase()}`}>{statusValue(detail.status, job.status)}</span></td>
           <td>{detail.processing_time ?? job.processing_time ?? 0}s</td>
@@ -56,7 +56,7 @@ function ProcessingHistory() {
         <td>{job.files} file(s)</td>
         <td>-</td>
         <td>{numberValue(job.records)}</td>
-        <td>{numberValue(job.processed_records)}</td>
+        <td>{numberValue(job.processed_records ?? job.processed)}</td>
         <td>{numberValue(job.failed_records)}</td>
         <td><span className={`job-status ${statusValue(job.status).toLowerCase()}`}>{statusValue(job.status)}</span></td>
         <td>{job.processing_time}s</td>
@@ -111,6 +111,8 @@ function ProcessingHistory() {
               <span>Status<strong>{selectedJob.status}</strong></span>
               <span>Files<strong>{selectedJob.files}</strong></span>
               <span>Records<strong>{numberValue(selectedJob.records)}</strong></span>
+              <span>Normalized<strong>{numberValue(selectedJob.processed_records)}</strong></span>
+              <span>Failed<strong>{numberValue(selectedJob.failed_records)}</strong></span>
               <span>Processing time<strong>{selectedJob.processing_time}s</strong></span>
               <span>Started<strong>{selectedJob.started_at || "-"}</strong></span>
               <span>Completed<strong>{selectedJob.completed_at || "-"}</strong></span>
@@ -121,7 +123,7 @@ function ProcessingHistory() {
                 <div className="history-detail-grid">
                   <span>Raw records<strong>{numberValue(detail.records)}</strong></span>
                   <span>Parsed records<strong>{numberValue(detail.records)}</strong></span>
-                  <span>Normalized records<strong>{numberValue(detail.success ?? detail.normalized)}</strong></span>
+                  <span>Normalized records<strong>{numberValue(detail.success ?? detail.normalized ?? selectedJob.processed_records)}</strong></span>
                   <span>Failed records<strong>{numberValue(detail.failed)}</strong></span>
                   <span>Quality score<strong>{detail.quality_score ?? "-"}{detail.quality_score == null ? "" : "%"}</strong></span>
                   <span>Parser<strong>{detail.parser || "-"}</strong></span>

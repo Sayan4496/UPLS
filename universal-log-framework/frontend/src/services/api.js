@@ -152,6 +152,15 @@ export const previewParserLab = async (rawLog) => {
 
 };
 
+export const getParserPlugins = async () => {
+  const response = await api.get("/parser-lab/plugins");
+  return response.data;
+};
+
+export const exportMlDataset = async () => {
+  return api.get("/api/v1/export/ml-dataset", { responseType: "blob" });
+};
+
 
 export const getProcessingJob = async (jobId) => {
 
