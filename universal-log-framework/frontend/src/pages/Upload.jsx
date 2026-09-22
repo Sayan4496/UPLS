@@ -1,15 +1,43 @@
 import { useState } from "react";
-import { getProcessingJob, requestWithFallback } from "../services/api";
+import { getProcessingJob, ingestLog, requestWithFallback } from "../services/api";
 
 function Upload() {
+  const [mode, setMode] = useState("file");
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [result, setResult] = useState(null);
   const [processingJob, setProcessingJob] = useState(null);
+  const [directForm, setDirectForm] = useState({
+    source: "",
+    timestamp: "",
+    message: "",
+    structuredData: "",
+  });
 
   const handleFileChange = (event) => {
     setSelectedFiles(Array.from(event.target.files || []));
+    setMessage("");
+    setResult(null);
+    setProcessingJob(null);
+  };
+
+  const handleModeChange = (nextMode) => {
+    setMode(nextMode);
+    setMessage("");
+    setResult(null);
+    setProcessingJob(null);
+  };
+
+  const handleDirectChange = (event) => {
+    const { name, value } = event.target;
+    setDirectForm((current) => ({ ...current, [name]: value }));
+    setMessage("");
+    setResult(null);
+  };
+
+  const clearDirectForm = () => {
+    setDirectForm({ source: "", timestamp: "", message: "", structuredData: "" });
     setMessage("");
     setResult(null);
     setProcessingJob(null);
@@ -96,22 +124,109 @@ function Upload() {
     }
   };
 
+  const handleDirectIngest = async () => {
+    if (!directForm.message.trim()) {
+      setMessage("Enter a log message before ingesting.");
+      setResult(null);
+      return;
+    }
+
+    let structuredFields = {};
+    if (directForm.structuredData.trim()) {
+      try {
+        structuredFields = JSON.parse(directForm.structuredData);
+      } catch {
+        setMessage("Structured data must be valid JSON.");
+        setResult(null);
+        return;
+      }
+
+      if (!structuredFields || Array.isArray(structuredFields) || typeof structuredFields !== "object") {
+        setMessage("Structured data must be a JSON object.");
+        setResult(null);
+        return;
+      }
+    }
+
+    const payload = {
+      ...structuredFields,
+      message: directForm.message,
+    };
+
+    if (directForm.source.trim()) payload.source = directForm.source.trim();
+    if (directForm.timestamp.trim()) payload.timestamp = directForm.timestamp.trim();
+
+    try {
+      setUploading(true);
+      setMessage("");
+      const response = await ingestLog(payload);
+      setResult(response);
+      setProcessingJob(response.job || null);
+      setMessage(response.message || "Log accepted for processing.");
+
+      if (response.job?.job_id) {
+        const completedJob = await waitForJob(response.job.job_id);
+        setProcessingJob(completedJob);
+        setMessage(
+          completedJob.status === "done"
+            ? "Log processed successfully."
+            : `Log processing ${completedJob.status}.`
+        );
+      }
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      const validationMessage = Array.isArray(detail)
+        ? detail.map((item) => item.msg).filter(Boolean).join("; ")
+        : detail;
+      setResult(null);
+      setMessage(validationMessage || (error.response
+        ? "The backend could not ingest this event."
+        : "Cannot connect to backend server."));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="page">
 
       <div className="page-header">
         <div>
-          <h1>Log Upload</h1>
+          <h1>Ingestion</h1>
 
           <p>
-            Upload log files for parsing and normalization.
+            Choose a file workflow or send one API-style event.
           </p>
         </div>
       </div>
 
+      <div className="ingestion-mode-tabs" role="tablist" aria-label="Ingestion mode">
+        <button
+          className={mode === "file" ? "ingestion-mode-tab active" : "ingestion-mode-tab"}
+          onClick={() => handleModeChange("file")}
+          role="tab"
+          aria-selected={mode === "file"}
+        >
+          File Upload
+        </button>
+        <button
+          className={mode === "direct" ? "ingestion-mode-tab active" : "ingestion-mode-tab"}
+          onClick={() => handleModeChange("direct")}
+          role="tab"
+          aria-selected={mode === "direct"}
+        >
+          Direct Ingestion
+        </button>
+      </div>
+
+      <p className="ingestion-help">
+        Use File Upload for batch log files. Use Direct Ingestion for API-based event ingestion and integration testing.
+        Direct Ingestion is intended for individual/API-style events. For large log files, use File Upload.
+      </p>
+
       <div className="upload-container">
 
-        <div className="upload-card">
+        {mode === "file" ? <div className="upload-card">
 
           <div className="upload-icon">
             ↑
@@ -204,7 +319,77 @@ function Upload() {
             </div>
           )}
 
-        </div>
+        </div> : <div className="upload-card direct-ingestion-card">
+          <div className="upload-icon">⇢</div>
+          <h2>Direct Ingestion</h2>
+          <p>Send one event to the existing API ingestion endpoint.</p>
+
+          <label htmlFor="direct-source">Source</label>
+          <input
+            id="direct-source"
+            name="source"
+            type="text"
+            value={directForm.source}
+            onChange={handleDirectChange}
+            placeholder="Optional source or device type"
+          />
+
+          <label htmlFor="direct-timestamp">Timestamp</label>
+          <input
+            id="direct-timestamp"
+            name="timestamp"
+            type="text"
+            value={directForm.timestamp}
+            onChange={handleDirectChange}
+            placeholder="Optional ISO 8601 timestamp"
+          />
+
+          <label htmlFor="direct-message">Log Message</label>
+          <textarea
+            id="direct-message"
+            name="message"
+            value={directForm.message}
+            onChange={handleDirectChange}
+            rows="6"
+            placeholder="Enter one log message"
+            required
+          />
+
+          <label htmlFor="direct-structured-data">Structured Data / JSON</label>
+          <textarea
+            id="direct-structured-data"
+            name="structuredData"
+            value={directForm.structuredData}
+            onChange={handleDirectChange}
+            rows="5"
+            placeholder={'Optional JSON object, for example: {"severity":"high"}'}
+          />
+
+          <div className="direct-ingestion-actions">
+            <button className="primary-button" onClick={handleDirectIngest} disabled={uploading}>
+              {uploading ? "Ingesting..." : "Ingest Event"}
+            </button>
+            <button className="secondary-button" onClick={clearDirectForm} disabled={uploading}>
+              Clear
+            </button>
+          </div>
+
+          {message && <div className={result ? "success-message" : "error-message"}>{message}</div>}
+
+          {processingJob && (
+            <div className="processing-job" aria-live="polite">
+              <div className="processing-job-header">
+                <strong>Job ID {processingJob.job_id}</strong>
+                <span>{processingJob.status}</span>
+              </div>
+              <div className="processing-job-stats">
+                <span>Message {processingJob.message_id || result?.message_id || "Pending"}</span>
+                <span>Records {processingJob.records}</span>
+                <span>Failed {processingJob.failed}</span>
+              </div>
+            </div>
+          )}
+        </div>}
 
 
         {result && (

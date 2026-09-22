@@ -152,6 +152,11 @@ export const previewParserLab = async (rawLog) => {
 
 };
 
+export const ingestLog = async (payload) => {
+  const response = await api.post("/api/v1/logs/ingest", payload);
+  return response.data;
+};
+
 export const getParserPlugins = async () => {
   const response = await api.get("/parser-lab/plugins");
   return response.data;

@@ -3165,3 +3165,86 @@ th {
     font-size: clamp(28px, 9vw, 40px);
   }
 }
+
+.ingestion-mode-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  background: rgba(10, 25, 43, 0.78);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.ingestion-mode-tab {
+  min-height: 38px;
+  padding: 8px 14px;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.ingestion-mode-tab.active {
+  color: #06111f;
+  background: #70c1ff;
+}
+
+.ingestion-help {
+  max-width: 780px;
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.direct-ingestion-card label {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.direct-ingestion-card input,
+.direct-ingestion-card textarea {
+  width: 100%;
+  margin-top: 6px;
+  padding: 11px 12px;
+  color: var(--text);
+  background: rgba(5, 13, 24, 0.4);
+  border: 1px solid #41617f;
+  border-radius: 10px;
+  font: inherit;
+  resize: vertical;
+}
+
+.direct-ingestion-card textarea {
+  min-height: 92px;
+}
+
+.direct-ingestion-card input:focus,
+.direct-ingestion-card textarea:focus {
+  outline: 2px solid rgba(112, 193, 255, 0.35);
+  border-color: #70c1ff;
+}
+
+.direct-ingestion-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.secondary-button {
+  min-height: 42px;
+  margin-top: 18px;
+  padding: 10px 16px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-weight: 700;
+}
+
+.secondary-button:disabled { cursor: wait; opacity: 0.6; }
