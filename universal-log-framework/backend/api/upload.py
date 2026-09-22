@@ -14,6 +14,8 @@ from ingestion.file_handler import read_uploaded_file
 
 from ingestion.processing_service import ProcessingService
 from ulpf_queue.producer import KafkaProducer, is_queue_enabled
+from storage.object_store import object_key_for_upload, upload_fileobj
+from starlette.concurrency import run_in_threadpool
 
 
 router = APIRouter(
@@ -52,7 +54,6 @@ def _process_upload_content(db, filename, content):
 
 
 async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer | None = None):
-    content = await read_uploaded_file(file)
     started_counter = time.perf_counter()
     queue_mode = producer is not None and is_queue_enabled()
     job = ProcessingJob(
@@ -71,13 +72,19 @@ async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer |
             db.add(upload)
             db.commit()
             db.refresh(upload)
+            object_key = object_key_for_upload(upload.id, file.filename)
+            await file.seek(0)
+            await run_in_threadpool(upload_fileobj, file.file, object_key)
             message = await producer.publish(
                 upload=upload,
-                raw_content=content,
                 source_metadata={"filename": file.filename, "file_type": upload.file_type},
                 job_id=str(job.id),
+                object_key=object_key,
+                filename=file.filename,
+                file_format=upload.file_type,
             )
             job.message_id = message["message_id"]
+            job.details = [{"file": file.filename, "status": "QUEUED", "object_key": object_key}]
             db.commit()
             return {
                 "upload_id": str(upload.id),
@@ -87,6 +94,7 @@ async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer |
                 "job": _job_payload(job),
             }
 
+        content = await read_uploaded_file(file)
         result = _process_upload_content(db, file.filename, content)
         elapsed = time.perf_counter() - started_counter
         parsed_records = result["processing_result"].get("parsed_events", 0)
@@ -295,6 +303,7 @@ async def upload_batch(
         )
 
     file_payloads = []
+    job = None
 
     try:
         for file in files:
@@ -305,7 +314,10 @@ async def upload_batch(
                 )
 
             validate_file(file.filename)
-            file_payloads.append((file.filename, await read_uploaded_file(file)))
+            if is_queue_enabled() and getattr(request.app.state, "kafka_producer", None) is not None:
+                file_payloads.append((file.filename, file))
+            else:
+                file_payloads.append((file.filename, await read_uploaded_file(file)))
 
         db = SessionLocal()
         job = ProcessingJob(total_files=len(file_payloads))
@@ -315,12 +327,38 @@ async def upload_batch(
         job_response = _job_payload(job)
         db.close()
 
-        background_tasks.add_task(
-            _run_batch_job,
-            job.id,
-            file_payloads,
-            getattr(request.app.state, "kafka_producer", None),
-        )
+        producer = getattr(request.app.state, "kafka_producer", None)
+        if producer is not None and is_queue_enabled():
+            for filename, upload_file in file_payloads:
+                upload = Upload(filename=filename, file_type=filename.split(".")[-1].upper())
+                db = SessionLocal()
+                try:
+                    db.add(upload)
+                    db.commit()
+                    db.refresh(upload)
+                finally:
+                    db.close()
+                object_key = object_key_for_upload(upload.id, filename)
+                await upload_file.seek(0)
+                await run_in_threadpool(upload_fileobj, upload_file.file, object_key)
+                message = await producer.publish(
+                    upload=upload,
+                    source_metadata={"filename": filename, "file_type": upload.file_type},
+                    job_id=str(job.id),
+                    object_key=object_key,
+                    filename=filename,
+                    file_format=upload.file_type,
+                )
+                db = SessionLocal()
+                try:
+                    job = db.query(ProcessingJob).filter(ProcessingJob.id == job.id).one()
+                    job.message_id = message["message_id"]
+                    job.details = list(job.details or []) + [{"file": filename, "status": "QUEUED", "object_key": object_key}]
+                    db.commit()
+                finally:
+                    db.close()
+        else:
+            background_tasks.add_task(_run_batch_job, job.id, file_payloads, producer)
 
         return {
             "message": "Batch processing job created",
@@ -338,6 +376,18 @@ async def upload_batch(
         raise
 
     except Exception as e:
+        if job is not None:
+            failure_db = SessionLocal()
+            try:
+                failed_job = failure_db.query(ProcessingJob).filter(ProcessingJob.id == job.id).first()
+                if failed_job is not None:
+                    failed_job.status = "failed"
+                    failed_job.failed_files = max(failed_job.failed_files, 1)
+                    failed_job.error_message = str(e)
+                    failed_job.completed_at = datetime.now(timezone.utc)
+                    failure_db.commit()
+            finally:
+                failure_db.close()
         raise HTTPException(
             status_code=500,
             detail=str(e)

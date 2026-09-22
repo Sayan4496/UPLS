@@ -196,6 +196,10 @@ services:
       KAFKA_INGESTED_TOPIC: raw-logs-ingested
       KAFKA_DLQ_TOPIC: raw-logs-dlq
       KAFKA_CONSUMER_GROUP: ulpf-worker
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ulpf-datalake}
       PYTHONUNBUFFERED: "1"
     volumes:
       - ./backend:/app

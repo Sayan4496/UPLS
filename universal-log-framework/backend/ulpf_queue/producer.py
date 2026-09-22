@@ -59,23 +59,30 @@ class KafkaProducer:
     async def publish(
         self,
         upload: Any,
-        raw_content: str,
+        raw_content: str | None = None,
         source_metadata: dict[str, Any] | None = None,
         job_id: str | None = None,
+        object_key: str | None = None,
+        filename: str | None = None,
+        file_format: str | None = None,
     ) -> dict[str, Any]:
         if self._producer is None:
             raise RuntimeError("Kafka producer has not been started")
 
-        detection_result = FormatDetector.detect_with_confidence(raw_content)
         message = {
             "message_id": str(uuid.uuid4()),
             "upload_id": str(upload.id),
             "job_id": job_id,
-            "raw_content": raw_content,
+            "object_key": object_key,
+            "filename": filename or getattr(upload, "filename", None),
+            "format": file_format or getattr(upload, "file_type", None),
             "source_metadata": source_metadata or {},
             "ingested_at": datetime.now(timezone.utc).isoformat(),
-            "format_detection": detection_result,
         }
+
+        if raw_content is not None:
+            message["raw_content"] = raw_content
+            message["format_detection"] = FormatDetector.detect_with_confidence(raw_content)
 
         await self._producer.send_and_wait(
             self.ingested_topic,

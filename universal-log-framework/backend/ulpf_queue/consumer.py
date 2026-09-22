@@ -16,6 +16,7 @@ from ingestion.processing_service import ProcessingService
 from models.processing_job import ProcessingJob
 from models.raw_event import RawEvent
 from models.upload import Upload
+from storage.object_store import ObjectStoreError, MissingObjectError, download_to_tempfile
 
 
 logger = logging.getLogger("ulpf-worker")
@@ -188,7 +189,20 @@ class KafkaConsumerWorker:
                 raise PoisonMessageError(f"Upload not found: {upload_id}")
 
             raw_content = payload.get("raw_content")
-            if raw_content is None:
+            object_key = payload.get("object_key")
+            temp_file = None
+            if raw_content is None and object_key:
+                try:
+                    temp_file = await asyncio.to_thread(download_to_tempfile, object_key)
+                    raw_content = temp_file.read().decode("utf-8")
+                except MissingObjectError as error:
+                    raise PoisonMessageError(str(error)) from error
+                except (ObjectStoreError, UnicodeDecodeError) as error:
+                    raise ConnectionError(str(error)) from error
+                finally:
+                    if temp_file is not None:
+                        temp_file.close()
+            elif raw_content is None:
                 raw_event = (
                     db.query(RawEvent).filter(RawEvent.upload_id == upload_id)
                     .order_by(RawEvent.created_at.asc(), RawEvent.id.asc()).first()

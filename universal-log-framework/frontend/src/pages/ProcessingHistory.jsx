@@ -36,14 +36,19 @@ function ProcessingHistory() {
 
   const historyRows = jobs.flatMap((job) => {
     if (job.details?.length) {
-      return job.details.map((detail, index) => (
+      const hasCompletedDetail = job.details.some((detail) => detail.status !== "QUEUED");
+      const visibleDetails = job.details.filter(
+        (detail) => !(hasCompletedDetail && detail.status === "QUEUED")
+      );
+
+      return visibleDetails.map((detail, index) => (
         <tr key={`${jobId(job)}-${index}`} onClick={() => setSelectedJob(job)}>
           <td className="job-id-cell">{jobId(job).slice(0, 8)}</td>
           <td>{detail.file || `${detail.format || "Unknown"} record batch`}</td>
           <td>{detail.format}</td>
           <td>{numberValue(detail.records)}</td>
-          <td>{numberValue(detail.success ?? detail.normalized ?? job.processed_records)}</td>
-          <td>{numberValue(detail.failed)}</td>
+          <td>{numberValue(detail.normalized ?? detail.success ?? job.processed_records)}</td>
+          <td>{numberValue(detail.failed ?? job.failed_records)}</td>
           <td><span className={`job-status ${statusValue(detail.status, job.status).toLowerCase()}`}>{statusValue(detail.status, job.status)}</span></td>
           <td>{detail.processing_time ?? job.processing_time ?? 0}s</td>
         </tr>
@@ -89,7 +94,7 @@ function ProcessingHistory() {
             <table className="processing-history-table">
               <thead>
                 <tr>
-                  <th>Job ID</th><th>File</th><th>Format</th><th>Records</th><th>Success</th><th>Failed</th><th>Status</th><th>Time</th>
+                  <th>Job ID</th><th>File</th><th>Format</th><th>Records</th><th>Processed</th><th>Quality Issues</th><th>Status</th><th>Time</th>
                 </tr>
               </thead>
               <tbody>
@@ -111,8 +116,8 @@ function ProcessingHistory() {
               <span>Status<strong>{selectedJob.status}</strong></span>
               <span>Files<strong>{selectedJob.files}</strong></span>
               <span>Records<strong>{numberValue(selectedJob.records)}</strong></span>
-              <span>Normalized<strong>{numberValue(selectedJob.processed_records)}</strong></span>
-              <span>Failed<strong>{numberValue(selectedJob.failed_records)}</strong></span>
+              <span>Processed<strong>{numberValue(selectedJob.processed_records)}</strong></span>
+              <span>Quality Issues<strong>{numberValue(selectedJob.failed_records)}</strong></span>
               <span>Processing time<strong>{selectedJob.processing_time}s</strong></span>
               <span>Started<strong>{selectedJob.started_at || "-"}</strong></span>
               <span>Completed<strong>{selectedJob.completed_at || "-"}</strong></span>
@@ -123,8 +128,8 @@ function ProcessingHistory() {
                 <div className="history-detail-grid">
                   <span>Raw records<strong>{numberValue(detail.records)}</strong></span>
                   <span>Parsed records<strong>{numberValue(detail.records)}</strong></span>
-                  <span>Normalized records<strong>{numberValue(detail.success ?? detail.normalized ?? selectedJob.processed_records)}</strong></span>
-                  <span>Failed records<strong>{numberValue(detail.failed)}</strong></span>
+                  <span>Processed records<strong>{numberValue(detail.normalized ?? detail.success ?? selectedJob.processed_records)}</strong></span>
+                  <span>Quality issues<strong>{numberValue(detail.failed ?? selectedJob.failed_records)}</strong></span>
                   <span>Quality score<strong>{detail.quality_score ?? "-"}{detail.quality_score == null ? "" : "%"}</strong></span>
                   <span>Parser<strong>{detail.parser || "-"}</strong></span>
                   <span>Parser version<strong>{detail.parser_version || "-"}</strong></span>
