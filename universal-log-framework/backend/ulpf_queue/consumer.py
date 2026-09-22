@@ -162,18 +162,24 @@ class KafkaConsumerWorker:
         payload = self._decode_payload(message.value)
         message_id = self._parse_uuid(payload.get("message_id"), "message_id")
         upload_id = self._parse_uuid(payload.get("upload_id"), "upload_id")
+        job_id = payload.get("job_id")
+        if job_id is not None:
+            job_id = self._parse_uuid(job_id, "job_id")
 
         db = SessionLocal()
         job = None
         try:
-            job = ProcessingJob(
-                status="processing",
-                total_files=1,
-                message_id=str(message_id),
-                queue_offset=message.offset,
-                started_at=datetime.now(timezone.utc),
-            )
-            db.add(job)
+            job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).one_or_none() if job_id else None
+            if job is None:
+                job = ProcessingJob(total_files=1)
+                db.add(job)
+            if any(detail.get("message_id") == str(message_id) for detail in (job.details or [])):
+                await self.consumer.commit({TopicPartition(message.topic, message.partition): message.offset + 1})
+                return
+            job.status = "processing"
+            job.message_id = str(message_id)
+            job.queue_offset = message.offset
+            job.started_at = job.started_at or datetime.now(timezone.utc)
             db.commit()
             db.refresh(job)
 
@@ -181,38 +187,35 @@ class KafkaConsumerWorker:
             if upload is None:
                 raise PoisonMessageError(f"Upload not found: {upload_id}")
 
-            raw_event = (
-                db.query(RawEvent)
-                .filter(RawEvent.upload_id == upload_id)
-                .order_by(RawEvent.created_at.asc(), RawEvent.id.asc())
-                .first()
-            )
-            if raw_event is None:
-                raise PoisonMessageError(f"Raw event not found for upload: {upload_id}")
+            raw_content = payload.get("raw_content")
+            if raw_content is None:
+                raw_event = (
+                    db.query(RawEvent).filter(RawEvent.upload_id == upload_id)
+                    .order_by(RawEvent.created_at.asc(), RawEvent.id.asc()).first()
+                )
+                if raw_event is None:
+                    raise PoisonMessageError(f"Raw event not found for upload: {upload_id}")
+                raw_content = raw_event.raw_content
 
             result = ProcessingService().process(
                 db=db,
                 upload=upload,
-                raw_content=raw_event.raw_content,
+                raw_content=raw_content,
             )
 
             processing_result = result.get("quality_metrics", {})
-            job.status = "done"
-            job.processed_files = 1
-            job.total_records = result.get("parsed_events", 0)
-            job.processed_records = result.get("normalized_events_created", 0)
-            job.failed_records = processing_result.get("failed", 0)
-            job.completed_at = datetime.now(timezone.utc)
-            job.details = [
-                {
-                    "message_id": str(message_id),
-                    "queue_offset": message.offset,
-                    "format": result.get("format"),
-                    "records": result.get("parsed_events", 0),
-                    "normalized": result.get("normalized_events_created", 0),
-                    "failed": processing_result.get("failed", 0),
-                }
-            ]
+            job.processed_files += 1
+            job.total_records += result.get("parsed_events", 0)
+            job.processed_records += result.get("normalized_events_created", 0)
+            job.failed_records += processing_result.get("failed", 0)
+            job.status = "done" if job.processed_files + job.failed_files >= max(job.total_files, 1) else "processing"
+            job.completed_at = datetime.now(timezone.utc) if job.status == "done" else None
+            job.details = list(job.details or []) + [{
+                "message_id": str(message_id), "queue_offset": message.offset,
+                "format": result.get("format"), "records": result.get("parsed_events", 0),
+                "normalized": result.get("normalized_events_created", 0),
+                "failed": processing_result.get("failed", 0),
+            }]
             db.commit()
             await self.consumer.commit({
                 TopicPartition(message.topic, message.partition): message.offset + 1

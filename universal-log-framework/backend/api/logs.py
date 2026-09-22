@@ -7,7 +7,25 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.database import SessionLocal
 from ingestion.processing_service import ProcessingService
 from models.upload import Upload
-from ulpf_queue.producer import KafkaProducer
+from models.processing_job import ProcessingJob
+from ulpf_queue.producer import KafkaProducer, is_queue_enabled
+
+
+def _job_payload(job):
+    total_files = max(job.total_files, 1)
+    return {
+        "job_id": str(job.id), "status": job.status, "message_id": job.message_id,
+        "queue_offset": job.queue_offset, "files": job.total_files,
+        "processed": job.processed_files, "failed": job.failed_files,
+        "remaining": max(job.total_files - job.processed_files - job.failed_files, 0),
+        "records": job.total_records, "processed_records": job.processed_records,
+        "failed_records": job.failed_records,
+        "progress_percent": round((job.processed_files / total_files) * 100),
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "error_message": job.error_message, "processing_time": job.processing_time or 0,
+        "details": job.details or [],
+    }
 
 
 router = APIRouter(
@@ -55,6 +73,24 @@ async def ingest_log(request: Request, payload: LogIngestRequest):
         db.commit()
         db.refresh(upload)
 
+        producer: KafkaProducer | None = getattr(request.app.state, "kafka_producer", None)
+        if producer is not None and is_queue_enabled():
+            job = ProcessingJob(total_files=1, status="queued")
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            message = await producer.publish(
+                upload=upload, raw_content=raw_content,
+                source_metadata={"source": payload.source, "ingestion_type": "rest"},
+                job_id=str(job.id),
+            )
+            job.message_id = message["message_id"]
+            db.commit()
+            return {
+                "message": "Log accepted for processing", "upload_id": str(upload.id),
+                "source": payload.source, "processing_result": None, "job": _job_payload(job),
+            }
+
         processing_service = ProcessingService()
 
         result = processing_service.process(
@@ -63,11 +99,6 @@ async def ingest_log(request: Request, payload: LogIngestRequest):
             raw_content=raw_content
         )
 
-        producer: KafkaProducer | None = getattr(
-            request.app.state,
-            "kafka_producer",
-            None,
-        )
         if producer is not None:
             await producer.publish(
                 upload=upload,

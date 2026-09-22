@@ -12,7 +12,10 @@ from normalization.schema import (
     UNIVERSAL_EVENT_SCHEMA_VERSION,
     validate_universal_event,
 )
-from normalization.service import save_normalized_event
+from normalization.service import (
+    save_duplicate_normalized_event,
+    save_normalized_event,
+)
 from analytics.features import persist_feature_batch
 
 from models.raw_event import RawEvent
@@ -280,7 +283,10 @@ class ProcessingService:
 
             existing_event = (
                 db.query(NormalizedEvent)
-                .filter(NormalizedEvent.event_hash == event_hash)
+                .filter(
+                    NormalizedEvent.event_hash == event_hash,
+                    NormalizedEvent.is_duplicate.is_(False),
+                )
                 .order_by(NormalizedEvent.processing_timestamp.asc(), NormalizedEvent.id.asc())
                 .first()
             )
@@ -340,6 +346,15 @@ class ProcessingService:
                     duplicate_of=str(existing_event.id) if existing_event else None,
                     reason=raw_event.status_reason,
                     original_event=event,
+                )
+                save_duplicate_normalized_event(
+                    db=db,
+                    canonical_event=existing_event,
+                    raw_event_id=raw_event.id,
+                    upload_id=upload.id,
+                    universal_event=raw_event.universal_event,
+                    processing_timestamp=datetime.now(timezone.utc),
+                    status_reason=raw_event.status_reason,
                 )
                 if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
                     commit_batch()
@@ -499,7 +514,7 @@ class ProcessingService:
             # Save Normalized Event
             # --------------------------------
 
-            normalized_event_id = save_normalized_event(
+            normalized_event = save_normalized_event(
 
                 db=db,
 
@@ -529,11 +544,10 @@ class ProcessingService:
 
             )
 
-            if normalized_event_id is None:
-                existing_event = (
-                    db.query(NormalizedEvent)
-                    .filter(NormalizedEvent.event_hash == event_hash)
-                    .one()
+            if normalized_event.is_duplicate:
+                existing_event = db.get(
+                    NormalizedEvent,
+                    normalized_event.duplicate_of,
                 )
                 original_raw_event = (
                     db.query(RawEvent)
@@ -557,6 +571,8 @@ class ProcessingService:
                     reason=raw_event.status_reason,
                     original_event=event,
                 )
+                normalized_event.universal_event = raw_event.universal_event
+                normalized_event.status_reason = raw_event.status_reason
                 quality_summary["duplicate_events"] += 1
                 if events_since_commit >= self.PERSISTENCE_BATCH_SIZE:
                     db.commit()
@@ -565,7 +581,7 @@ class ProcessingService:
 
 
             normalized_events_created += 1
-            feature_event_ids.append(normalized_event_id)
+            feature_event_ids.append(normalized_event.id)
             quality_summary["records_normalized"] += 1
             quality_summary["fallback_used"] += int(fallback_used)
             quality_summary["failed"] += int(quality_metrics["normalization_status"] != "SUCCESS")

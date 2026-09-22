@@ -13,7 +13,7 @@ from ingestion.validator import validate_file
 from ingestion.file_handler import read_uploaded_file
 
 from ingestion.processing_service import ProcessingService
-from ulpf_queue.producer import KafkaProducer
+from ulpf_queue.producer import KafkaProducer, is_queue_enabled
 
 
 router = APIRouter(
@@ -54,22 +54,40 @@ def _process_upload_content(db, filename, content):
 async def _process_single_upload(db, file: UploadFile, producer: KafkaProducer | None = None):
     content = await read_uploaded_file(file)
     started_counter = time.perf_counter()
-    job = ProcessingJob(total_files=1, status="processing", started_at=datetime.now(timezone.utc))
+    queue_mode = producer is not None and is_queue_enabled()
+    job = ProcessingJob(
+        total_files=1,
+        status="queued" if queue_mode else "processing",
+        started_at=None if queue_mode else datetime.now(timezone.utc),
+    )
     db.add(job)
     db.commit()
     db.refresh(job)
 
     try:
-        result = _process_upload_content(db, file.filename, content)
-        if producer is not None:
-            await producer.publish(
-                upload=db.query(Upload).filter(Upload.id == result["upload_id"]).one(),
+        if queue_mode:
+            validate_file(file.filename)
+            upload = Upload(filename=file.filename, file_type=file.filename.split(".")[-1].upper())
+            db.add(upload)
+            db.commit()
+            db.refresh(upload)
+            message = await producer.publish(
+                upload=upload,
                 raw_content=content,
-                source_metadata={
-                    "filename": file.filename,
-                    "file_type": result["file_type"],
-                },
+                source_metadata={"filename": file.filename, "file_type": upload.file_type},
+                job_id=str(job.id),
             )
+            job.message_id = message["message_id"]
+            db.commit()
+            return {
+                "upload_id": str(upload.id),
+                "filename": upload.filename,
+                "file_type": upload.file_type,
+                "processing_result": None,
+                "job": _job_payload(job),
+            }
+
+        result = _process_upload_content(db, file.filename, content)
         elapsed = time.perf_counter() - started_counter
         parsed_records = result["processing_result"].get("parsed_events", 0)
         job.details = [_file_detail(file.filename, result, elapsed)]
@@ -169,23 +187,31 @@ async def _run_batch_job(job_id, file_payloads, producer: KafkaProducer | None =
         return
 
     try:
-        job.status = "processing"
-        job.started_at = datetime.now(timezone.utc)
+        queue_mode = producer is not None and is_queue_enabled()
+        job.status = "queued" if queue_mode else "processing"
+        job.started_at = None if queue_mode else datetime.now(timezone.utc)
         db.commit()
 
         for filename, content in file_payloads:
             file_started = time.perf_counter()
             try:
-                result = _process_upload_content(db, filename, content)
-                if producer is not None:
+                if queue_mode:
+                    validate_file(filename)
+                    upload = Upload(filename=filename, file_type=filename.split(".")[-1].upper())
+                    db.add(upload)
+                    db.commit()
+                    db.refresh(upload)
                     await producer.publish(
-                        upload=db.query(Upload).filter(Upload.id == result["upload_id"]).one(),
+                        upload=upload,
                         raw_content=content,
-                        source_metadata={
-                            "filename": filename,
-                            "file_type": result["file_type"],
-                        },
+                        source_metadata={"filename": filename, "file_type": upload.file_type},
+                        job_id=str(job.id),
                     )
+                    job.details = list(job.details or []) + [{"file": filename, "status": "QUEUED", "processing_time": 0}]
+                    db.commit()
+                    continue
+
+                result = _process_upload_content(db, filename, content)
                 processing_result = result["processing_result"]
                 elapsed = time.perf_counter() - file_started
                 job.details = list(job.details or []) + [_file_detail(filename, result, elapsed)]
@@ -205,8 +231,9 @@ async def _run_batch_job(job_id, file_payloads, producer: KafkaProducer | None =
             db.commit()
 
         job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
-        job.status = "failed" if job.failed_files else "done"
-        job.completed_at = datetime.now(timezone.utc)
+        if not queue_mode:
+            job.status = "failed" if job.failed_files else "done"
+            job.completed_at = datetime.now(timezone.utc)
         db.commit()
 
     except Exception as error:

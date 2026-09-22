@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS normalized_events (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_event_id         UUID NOT NULL REFERENCES raw_events (id) ON DELETE CASCADE,
     upload_id            UUID NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
-    event_hash           VARCHAR(64) NOT NULL UNIQUE,
+    event_hash           VARCHAR(64) NOT NULL,
     duplicate_of         UUID NULL REFERENCES normalized_events(id) ON DELETE SET NULL,
     is_duplicate         BOOLEAN NOT NULL DEFAULT FALSE,
     processing_status     VARCHAR(20) NOT NULL DEFAULT 'ACCEPTED',
@@ -114,6 +114,9 @@ CREATE TABLE IF NOT EXISTS normalized_events (
 CREATE INDEX IF NOT EXISTS idx_normalized_events_raw_event_id ON normalized_events (raw_event_id);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_upload_id ON normalized_events (upload_id);
 CREATE INDEX IF NOT EXISTS idx_normalized_events_event_hash ON normalized_events (event_hash);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_normalized_events_canonical_event_hash
+    ON normalized_events (event_hash)
+    WHERE is_duplicate = FALSE;
 
 -- Query/filter patterns from the Search & Analytics API
 CREATE INDEX IF NOT EXISTS idx_normalized_events_timestamp ON normalized_events (event_timestamp);

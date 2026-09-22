@@ -122,7 +122,7 @@ services:
 
     environment:
 
-      QUEUE_ENABLED: "false"
+      QUEUE_ENABLED: "true"
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
       KAFKA_INGESTED_TOPIC: raw-logs-ingested
       KAFKA_DLQ_TOPIC: raw-logs-dlq

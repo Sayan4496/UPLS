@@ -61,6 +61,7 @@ class KafkaProducer:
         upload: Any,
         raw_content: str,
         source_metadata: dict[str, Any] | None = None,
+        job_id: str | None = None,
     ) -> dict[str, Any]:
         if self._producer is None:
             raise RuntimeError("Kafka producer has not been started")
@@ -69,13 +70,13 @@ class KafkaProducer:
         message = {
             "message_id": str(uuid.uuid4()),
             "upload_id": str(upload.id),
+            "job_id": job_id,
+            "raw_content": raw_content,
             "source_metadata": source_metadata or {},
             "ingested_at": datetime.now(timezone.utc).isoformat(),
             "format_detection": detection_result,
         }
 
-        # Kafka carries the reference and metadata only; the consumer loads the
-        # raw file from PostgreSQL by upload_id instead of duplicating file data.
         await self._producer.send_and_wait(
             self.ingested_topic,
             value=json.dumps(message, default=str).encode("utf-8"),
