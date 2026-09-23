@@ -38,6 +38,11 @@ const statusColors = {
 
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 
+const volumeDomain = (rows) => {
+  const maximum = Math.max(0, ...rows.map((row) => Number(row.logs) || 0));
+  return maximum ? [0, Math.ceil(maximum * 1.1)] : [0, 1];
+};
+
 const formatParserName = (value) => value
   ? value
   .replace("_parser", "")
@@ -100,6 +105,7 @@ function Analytics() {
   const severity = dashboard?.severity || [];
   const sourceHealth = dashboard?.source_health || [];
   const totalLogs = summary.total_logs || 0;
+  const logVolumeDomain = volumeDomain(volume);
 
   return (
     <div className="page analytics-page">
@@ -122,7 +128,7 @@ function Analytics() {
         <div className="panel analytics-chart-panel analytics-chart-wide">
           <div className="panel-header"><div><p className="eyebrow">Timeline</p><h2>Log volume over time</h2></div><span className="data-chip">{formatNumber(totalLogs)} logs</span></div>
           <div className="chart-wrap">
-            {volume.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={volume}><defs><linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={0.38} /><stop offset="100%" stopColor="#60a5fa" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid stroke="rgba(145,173,205,.12)" vertical={false} /><XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={42} /><Tooltip contentStyle={{ background: "#142235", border: "1px solid #2d4460", borderRadius: 8, color: "#e5e7eb" }} labelFormatter={formatDate} /><Area type="monotone" dataKey="logs" stroke="#60a5fa" strokeWidth={2.5} fill="url(#volumeFill)" /></AreaChart></ResponsiveContainer> : <div className="chart-empty">No timestamped logs yet.</div>}
+            {volume.length ? <ResponsiveContainer width="100%" height="100%"><AreaChart data={volume}><defs><linearGradient id="volumeFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#60a5fa" stopOpacity={0.38} /><stop offset="100%" stopColor="#60a5fa" stopOpacity={0.02} /></linearGradient></defs><CartesianGrid stroke="rgba(145,173,205,.12)" vertical={false} /><XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis domain={logVolumeDomain} tickFormatter={formatNumber} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} width={64} /><Tooltip contentStyle={{ background: "#142235", border: "1px solid #2d4460", borderRadius: 8, color: "#e5e7eb" }} labelFormatter={formatDate} formatter={(value) => [formatNumber(value), "logs"]} /><Area type="monotone" dataKey="logs" stroke="#60a5fa" strokeWidth={2.5} fill="url(#volumeFill)" /></AreaChart></ResponsiveContainer> : <div className="chart-empty">No timestamped logs yet.</div>}
           </div>
         </div>
 

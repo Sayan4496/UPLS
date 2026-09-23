@@ -376,6 +376,15 @@ ulpf-postgres   database    Up
 
 ## Environment Configuration
 
+### Queue upload storage
+
+Queue-enabled file uploads store the raw file in the existing MinIO bucket and
+send only the upload reference and processing metadata through Redpanda. The
+worker retrieves the object before invoking the existing parser and processing
+pipeline. This avoids embedding raw file content in a Redpanda message; the
+parser boundary still receives a decoded string because the existing parser
+contract is string-based.
+
 The default Docker configuration does not require users to manually create a `.env` file. All required development environment values are configured inside `docker-compose.yml`, including:
 
 ```yaml

@@ -3,6 +3,14 @@ import { Clock3, RefreshCw, X } from "lucide-react";
 
 import { getProcessingJobs } from "../services/api";
 
+function formatDuration(seconds) {
+  if (seconds < 1) return `${Math.round(seconds * 1000) / 1000}s`;
+  if (seconds < 60) return `${Math.round(seconds * 10) / 10}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = Math.round(seconds % 60);
+  return `${minutes}m${remainder ? ` ${remainder}s` : ""}`;
+}
+
 function ProcessingHistory() {
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
@@ -33,6 +41,15 @@ function ProcessingHistory() {
   const numberValue = (value) => Number(value || 0).toLocaleString();
   const jobId = (job) => job.job_id || job.message_id || "unknown";
   const statusValue = (value, fallback = "unknown") => String(value || fallback);
+  const durationValue = (job, detail) => {
+    const seconds = Number(detail?.processing_time ?? job.processing_time);
+    if (Number.isFinite(seconds) && seconds > 0) return formatDuration(seconds);
+    if (job.started_at && job.completed_at) {
+      const elapsedSeconds = (Date.parse(job.completed_at) - Date.parse(job.started_at)) / 1000;
+      if (Number.isFinite(elapsedSeconds) && elapsedSeconds >= 0) return formatDuration(elapsedSeconds);
+    }
+    return "N/A";
+  };
 
   const historyRows = jobs.flatMap((job) => {
     if (job.details?.length) {
@@ -50,7 +67,7 @@ function ProcessingHistory() {
           <td>{numberValue(detail.normalized ?? detail.success ?? job.processed_records)}</td>
           <td>{numberValue(detail.failed ?? job.failed_records)}</td>
           <td><span className={`job-status ${statusValue(detail.status, job.status).toLowerCase()}`}>{statusValue(detail.status, job.status)}</span></td>
-          <td>{detail.processing_time ?? job.processing_time ?? 0}s</td>
+          <td>{durationValue(job, detail)}</td>
         </tr>
       ));
     }
@@ -64,7 +81,7 @@ function ProcessingHistory() {
         <td>{numberValue(job.processed_records ?? job.processed)}</td>
         <td>{numberValue(job.failed_records)}</td>
         <td><span className={`job-status ${statusValue(job.status).toLowerCase()}`}>{statusValue(job.status)}</span></td>
-        <td>{job.processing_time}s</td>
+        <td>{durationValue(job)}</td>
       </tr>
     ];
   });
@@ -118,7 +135,7 @@ function ProcessingHistory() {
               <span>Records<strong>{numberValue(selectedJob.records)}</strong></span>
               <span>Processed<strong>{numberValue(selectedJob.processed_records)}</strong></span>
               <span>Quality Issues<strong>{numberValue(selectedJob.failed_records)}</strong></span>
-              <span>Processing time<strong>{selectedJob.processing_time}s</strong></span>
+              <span>Processing time<strong>{durationValue(selectedJob)}</strong></span>
               <span>Started<strong>{selectedJob.started_at || "-"}</strong></span>
               <span>Completed<strong>{selectedJob.completed_at || "-"}</strong></span>
             </div>
@@ -133,7 +150,7 @@ function ProcessingHistory() {
                   <span>Quality score<strong>{detail.quality_score ?? "-"}{detail.quality_score == null ? "" : "%"}</strong></span>
                   <span>Parser<strong>{detail.parser || "-"}</strong></span>
                   <span>Parser version<strong>{detail.parser_version || "-"}</strong></span>
-                  <span>Processing time<strong>{detail.processing_time}s</strong></span>
+                  <span>Processing time<strong>{durationValue(selectedJob, detail)}</strong></span>
                 </div>
               </section>
             ))}
