@@ -99,7 +99,6 @@ export — is available here:
 
 **[Watch the working prototype demo](https://www.youtube.com/watch?v=FPuIGO15iRE)**
 
-https://www.youtube.com/watch?v=FPuIGO15iRE
 
 ---
 ## 4. Problem
