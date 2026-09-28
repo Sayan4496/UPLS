@@ -99,9 +99,7 @@ export — is available here:
 
 **[Watch the working prototype demo](https://www.youtube.com/watch?v=FPuIGO15iRE)**
 
-> Replace `https://www.youtube.com/watch?v=FPuIGO15iRE` with the actual video link (e.g. YouTube, Google Drive, or a
-> repository-hosted `.mp4`) before submission. If hosting the file directly in the repo, place it
-> under `docs/demo/` and link it as a relative path instead of an external URL.
+https://www.youtube.com/watch?v=FPuIGO15iRE
 
 ---
 ## 4. Problem
